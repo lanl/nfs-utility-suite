@@ -1,0 +1,22 @@
+[package]
+name = "rpc_protocol"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "rpc_protocol"
+path = "src/lib.rs"
+
+[[bin]]
+name = "rpcinfo"
+path = "src/bin/rpcinfo.rs"
+
+[[bin]]
+name = "rpcbind"
+path = "src/bin/rpcbind.rs"
+
+[dependencies]
+clap = { version = "4.5.31", features = ["derive"] }
+
+[build-dependencies]
+xdr_rpc = { path = "../xdr_rpc" }

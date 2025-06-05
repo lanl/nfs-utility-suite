@@ -1,0 +1,7 @@
+[package]
+name = "test_xdr"
+version = "0.1.0"
+edition = "2021"
+
+[build-dependencies]
+xdr_rpc = { path = "../xdr_rpc" }
