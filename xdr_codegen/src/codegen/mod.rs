@@ -11,15 +11,10 @@ use crate::validate::*;
 mod no_alloc;
 
 /// Parameters for code generation.
+#[derive(Default)]
 pub struct Params {
     /// Whether to include non-allocating serialization routines.
     pub no_alloc: bool,
-}
-
-impl Default for Params {
-    fn default() -> Self {
-        Self { no_alloc: false }
-    }
 }
 
 const HELPERS: &str = r#"
@@ -127,7 +122,7 @@ pub fn codegen(schema: &ValidatedSchema, module_name: &str, params: &Params) -> 
                 .symbol_table
                 .lookup_definition(def)
                 .expect("Undefined name");
-            def.implementation(buf, &schema.symbol_table, &params);
+            def.implementation(buf, &schema.symbol_table, params);
         }
 
         for prog in schema.programs.iter() {
@@ -253,9 +248,9 @@ impl Definition {
 impl Value {
     fn as_type_name(&self, tab: &SymbolTable) -> String {
         match self {
-            Value::Int(i) => format!("{}", i),
+            Value::Int(i) => format!("{i}"),
             Value::Name(name) => tab
-                .lookup_definition(&name)
+                .lookup_definition(name)
                 .expect("undefined name")
                 .as_type_name(tab),
         }
@@ -265,7 +260,7 @@ impl Value {
         match self {
             Value::Int(i) => *i,
             Value::Name(name) => tab
-                .lookup_definition(&name)
+                .lookup_definition(name)
                 .expect("undefined name")
                 .as_const(tab),
         }
@@ -292,7 +287,7 @@ impl Array {
                 let len = &match v {
                     Value::Int(i) => *i,
                     Value::Name(name) => tab
-                        .lookup_definition(&name)
+                        .lookup_definition(name)
                         .expect("undefined name")
                         .as_const(tab),
                 };
@@ -306,7 +301,7 @@ impl Array {
 
     fn default_value(&self, tab: &SymbolTable) -> String {
         match &self.size {
-            ArraySize::Fixed(v) => self.fixed_length_array_initializer(&v, tab),
+            ArraySize::Fixed(v) => self.fixed_length_array_initializer(v, tab),
             _ => match &self.kind {
                 ArrayKind::Ascii => "std::ffi::OsString::new()".to_string(),
                 _ => "Vec::new()".to_string(),
@@ -330,10 +325,7 @@ impl Array {
         let len = val.as_const(tab);
         buf.code_block("", |buf| {
             buf.block_with_trailer(
-                &format!(
-                    "let arr: [{}; {}] = ::core::array::from_fn(|_|",
-                    inner_type, len,
-                ),
+                &format!("let arr: [{inner_type}; {len}] = ::core::array::from_fn(|_|",),
                 ");",
                 |buf| {
                     buf.add_line(&inner_default_value);
@@ -378,7 +370,7 @@ impl Array {
             ArrayKind::UserType(_) => {}
             _ => {
                 buf.add_line(&format!("let padding = (4 - {name}.len() % 4) % 4;"));
-                buf.add_line(&format!("buf.extend_from_slice(&vec![0; padding]);"));
+                buf.add_line("buf.extend_from_slice(&vec![0; padding]);");
             }
         };
     }
@@ -420,7 +412,7 @@ impl Array {
                         ArrayKind::UserType(_) => unreachable!(),
                     },
                 };
-                buf.add_line(&format!("let padding = (4 - len % 4) % 4;"));
+                buf.add_line("let padding = (4 - len % 4) % 4;");
                 buf.add_line("let (_, rest) = input.split_at(padding as usize);");
                 buf.add_line("*input = rest;");
             }
@@ -566,7 +558,7 @@ impl XdrUnionBoolBody {
             Declaration::Void => "()".to_string(),
         };
 
-        buf.code_block(&format!("pub struct {}", name), |buf| {
+        buf.code_block(&format!("pub struct {name}"), |buf| {
             buf.add_line(&format!("pub inner: Option<{inner_type}>,"));
         });
     }
@@ -621,7 +613,7 @@ impl XdrUnionEnumBody {
         }
     }
     fn definition_enum(&self, name: &str, buf: &mut CodeBuf, tab: &SymbolTable) {
-        buf.code_block(&format!("pub enum {}", name), |buf| {
+        buf.code_block(&format!("pub enum {name}"), |buf| {
             for arm in self.arms.iter() {
                 let name = XdrUnionEnumBody::arm_name(&arm.0);
                 match &arm.1 {
@@ -667,14 +659,14 @@ impl XdrUnionEnumBody {
                 let arm_name = XdrUnionEnumBody::arm_name(&arm.0);
                 match &arm.1 {
                     Declaration::Void => {
-                        buf.code_block(&format!("Self::{} => ", arm_name), |buf| {
+                        buf.code_block(&format!("Self::{arm_name} => "), |buf| {
                             max_disc =
                                 self.serialize_discriminant_value(&arm.0, max_disc, buf, tab);
                             buf.add_line("// void");
                         });
                     }
                     Declaration::Named(n) => {
-                        buf.code_block(&format!("Self::{}(inner) => ", arm_name), |buf| {
+                        buf.code_block(&format!("Self::{arm_name}(inner) => "), |buf| {
                             max_disc =
                                 self.serialize_discriminant_value(&arm.0, max_disc, buf, tab);
                             n.serialize_inline(Some("inner"), Context::InUnion, buf, tab);
@@ -724,8 +716,7 @@ impl XdrUnionEnumBody {
     ) -> u64 {
         let disc = self.get_discriminant_value(val, tab);
         buf.add_line(&format!(
-            "buf.extend_from_slice(&{}_i32.to_be_bytes());",
-            disc
+            "buf.extend_from_slice(&{disc}_i32.to_be_bytes());"
         ));
 
         if disc > max_disc {
@@ -743,11 +734,10 @@ impl XdrUnionEnumBody {
                 let Some(ref disc) = self.discriminant else {
                     panic!("BUG: attempt to use enum-style union without a discriminant");
                 };
-                let Definition::Enum(ref e) = *tab.lookup_definition(&disc).unwrap() else {
+                let Definition::Enum(ref e) = *tab.lookup_definition(disc).unwrap() else {
                     panic!("Using non-enum {n} as union discriminant is not allowed");
                 };
-                let val = e.lookup_value(&n, tab).unwrap();
-                val
+                e.lookup_value(n, tab).unwrap()
             }
         }
     }
@@ -766,7 +756,7 @@ impl XdrUnionEnumBody {
                         Declaration::Named(n) => {
                             buf.add_line(&format!("let mut inner = {};", n.default_value(tab)));
                             n.deserialize_inline(Some("inner"), buf, tab);
-                            buf.add_line(&format!("Self::{}(inner) ", arm_name));
+                            buf.add_line(&format!("Self::{arm_name}(inner) "));
                         }
                     };
                 });
@@ -814,7 +804,7 @@ impl XdrStruct {
                 let Declaration::Named(decl) = decl else {
                     unimplemented!("'void' is not supported as a struct member");
                 };
-                self.member_declaration(&decl, buf, tab);
+                self.member_declaration(decl, buf, tab);
             }
         });
         buf.add_line("");
@@ -828,7 +818,7 @@ impl XdrStruct {
     fn default(&self, buf: &mut CodeBuf, tab: &SymbolTable) {
         buf.code_block(&format!("impl Default for {}", self.name), |buf| {
             buf.code_block("fn default() -> Self", |buf| {
-                buf.code_block(&format!("{}", self.name), |buf| {
+                buf.code_block(&self.name, |buf| {
                     for decl in self.members.iter() {
                         let Declaration::Named(decl) = decl else {
                             unimplemented!("'void' is not supported as a struct member");
@@ -938,7 +928,7 @@ impl XdrEnum {
     /// value of `name` exists but is unresolvable.
     fn lookup_value(&self, name: &str, tab: &SymbolTable) -> Option<u64> {
         for var in self.variants.iter() {
-            if name == &var.0 {
+            if name == var.0 {
                 return match &var.1 {
                     Value::Int(i) => Some(*i),
                     Value::Name(n) => Some(
@@ -1018,10 +1008,10 @@ impl XdrType {
         let (func_name, func_kind) = self.serialize_method(tab);
         match func_kind {
             FunctionKind::Function => {
-                buf.add_line(&format!("let bytes = {}(&{});", func_name, var_name));
+                buf.add_line(&format!("let bytes = {func_name}(&{var_name});"));
             }
             FunctionKind::Method => {
-                buf.add_line(&format!("let bytes = {}.{};", var_name, func_name));
+                buf.add_line(&format!("let bytes = {var_name}.{func_name};"));
             }
         };
         buf.add_line("buf.extend_from_slice(&bytes);");
@@ -1227,7 +1217,7 @@ impl CodeBuf {
         self.indent();
         f(self);
         self.outdent();
-        self.add_line(&format!("}}{}", trailer,));
+        self.add_line(&format!("}}{trailer}"));
     }
 
     /// Append the given `contents` to the buffer.
@@ -1243,7 +1233,7 @@ impl CodeBuf {
     pub fn add_line(&mut self, lines: &str) {
         for line in lines.lines() {
             self.add_contents(line);
-            self.contents.push_str("\n");
+            self.contents.push('\n');
         }
     }
 
