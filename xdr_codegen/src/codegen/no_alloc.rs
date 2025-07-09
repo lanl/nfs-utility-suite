@@ -10,7 +10,7 @@ use crate::symbol_table::SymbolTable;
 impl XdrUnion {
     pub(super) fn serialize_no_alloc(&self, buf: &mut CodeBuf, _tab: &SymbolTable) {
         buf.code_block(
-            "pub fn serialize(&self, buf: &mut [u8]) -> Result<(), ()>",
+            "pub fn serialize(&self, buf: &mut [u8]) -> Result<usize, ()>",
             |buf| {
                 buf.add_line("todo!()");
             },
@@ -21,7 +21,7 @@ impl XdrUnion {
 impl XdrStruct {
     pub(super) fn serialize_no_alloc(&self, buf: &mut CodeBuf, _tab: &SymbolTable) {
         buf.code_block(
-            "pub fn serialize(&self, buf: &mut [u8]) -> Result<(), ()>",
+            "pub fn serialize(&self, buf: &mut [u8]) -> Result<usize, ()>",
             |buf| {
                 buf.add_line("todo!()");
             },
@@ -32,7 +32,7 @@ impl XdrStruct {
 impl XdrEnum {
     pub(super) fn serialize_no_alloc(&self, buf: &mut CodeBuf, _tab: &SymbolTable) {
         buf.code_block(
-            "pub fn serialize(&self, buf: &mut [u8]) -> Result<(), ()>",
+            "pub fn serialize(&self, buf: &mut [u8]) -> Result<usize, ()>",
             |buf| {
                 buf.add_line("todo!()");
             },
