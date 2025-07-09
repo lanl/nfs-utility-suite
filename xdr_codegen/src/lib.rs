@@ -90,6 +90,11 @@ impl Compiler {
         self
     }
 
+    pub fn no_alloc(&mut self) -> &mut Self {
+        self.params.no_alloc = true;
+        self
+    }
+
     pub fn run(&mut self) -> std::result::Result<(), Box<dyn Error>> {
         match &self.source {
             InputSource::StdIo => {

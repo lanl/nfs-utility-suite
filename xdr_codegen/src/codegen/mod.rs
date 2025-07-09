@@ -13,7 +13,7 @@ mod no_alloc;
 /// Parameters for code generation.
 pub struct Params {
     /// Whether to include non-allocating serialization routines.
-    no_alloc: bool,
+    pub no_alloc: bool,
 }
 
 impl Default for Params {
