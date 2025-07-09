@@ -59,3 +59,29 @@ impl File {
     pub fn deserialize(&mut self, mut input: &mut &[u8]) -> Result<(), helpers::DeserializeError>;
 }
 ```
+
+### How to use `xdr_codegen`
+
+You can run `xdr_codegen` via the command line:
+```bash
+$ echo "struct foo { int bar; };" | cargo run --bin xdr_codegen
+#[allow(non_camel_case_types, non_snake_case)]
+pub mod XdrInterface {
+    #[derive(Debug, PartialEq, Clone)]
+    pub struct foo {
+        pub bar: i32,
+    }
+
+    ...
+}
+```
+
+or in `build.rs`:
+```Rust
+fn main() {
+    xdr_codegen::Compiler::new()
+        .file("protocol_spec.x")
+        .run()
+        .expect("Generating code failed");
+}
+```
