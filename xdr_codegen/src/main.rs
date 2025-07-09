@@ -14,7 +14,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     let mut compiler = xdr_codegen::Compiler::new();
     if args.no_alloc {
-        compiler.no_alloc().run()
+        compiler.enable_no_alloc().disable_alloc().run()
     } else {
         compiler.run()
     }

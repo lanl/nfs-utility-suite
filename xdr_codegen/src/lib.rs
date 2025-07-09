@@ -90,8 +90,13 @@ impl Compiler {
         self
     }
 
-    pub fn no_alloc(&mut self) -> &mut Self {
+    pub fn enable_no_alloc(&mut self) -> &mut Self {
         self.params.no_alloc = true;
+        self
+    }
+
+    pub fn disable_alloc(&mut self) -> &mut Self {
+        self.params.alloc = false;
         self
     }
 

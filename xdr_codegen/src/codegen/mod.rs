@@ -11,10 +11,21 @@ use crate::validate::*;
 mod no_alloc;
 
 /// Parameters for code generation.
-#[derive(Default)]
 pub struct Params {
     /// Whether to include non-allocating serialization routines.
     pub no_alloc: bool,
+
+    /// Whether to include allocating serialization routines.
+    pub alloc: bool,
+}
+
+impl Default for Params {
+    fn default() -> Self {
+        Self {
+            no_alloc: false,
+            alloc: true,
+        }
+    }
 }
 
 const HELPERS: &str = r#"
@@ -498,12 +509,14 @@ impl XdrUnion {
     fn codegen(&self, buf: &mut CodeBuf, tab: &SymbolTable, params: &Params) {
         self.default(buf, tab);
         buf.code_block(&format!("impl {}", self.name), |buf| {
-            self.serialize_definition(buf, tab);
-            buf.add_line("");
-            self.deserialize_definition(buf, tab);
+            if params.alloc {
+                self.serialize_definition(buf, tab);
+            }
             if params.no_alloc {
                 self.serialize_no_alloc(buf, tab);
             }
+            buf.add_line("");
+            self.deserialize_definition(buf, tab);
         });
         buf.add_line("");
     }
@@ -787,12 +800,14 @@ impl XdrStruct {
     fn codegen(&self, buf: &mut CodeBuf, tab: &SymbolTable, params: &Params) {
         self.default(buf, tab);
         buf.code_block(&format!("impl {}", self.name), |buf| {
-            self.serialize_definition(buf, tab);
-            buf.add_line("");
-            self.deserialize_definition(buf, tab);
+            if params.alloc {
+                self.serialize_definition(buf, tab);
+            }
             if params.no_alloc {
                 self.serialize_no_alloc(buf, tab);
             }
+            buf.add_line("");
+            self.deserialize_definition(buf, tab);
         });
         buf.add_line("");
     }
@@ -867,12 +882,14 @@ impl XdrEnum {
     fn codegen(&self, buf: &mut CodeBuf, tab: &SymbolTable, params: &Params) {
         self.default(buf);
         buf.code_block(&format!("impl {}", self.name), |buf| {
-            self.serialize_definition(buf, tab);
-            buf.add_line("");
-            self.deserialize_definition(buf, tab);
+            if params.alloc {
+                self.serialize_definition(buf, tab);
+            }
             if params.no_alloc {
                 self.serialize_no_alloc(buf, tab);
             }
+            buf.add_line("");
+            self.deserialize_definition(buf, tab);
         });
         buf.add_line("");
     }
