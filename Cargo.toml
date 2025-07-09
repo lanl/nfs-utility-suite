@@ -3,6 +3,6 @@ resolver = "1"
 
 members = [
     "test_xdr",
-    "xdr_rpc",
+    "xdr_codegen",
     "rpc_protocol",
 ]

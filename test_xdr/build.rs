@@ -1,5 +1,5 @@
 fn main() {
-    xdr_rpc::Compiler::new()
+    xdr_codegen::Compiler::new()
         .file("input/arrays.x")
         .file("input/hello.x")
         .file("input/typedef.x")

@@ -139,7 +139,7 @@ name = "rpc_protocol"
 version = "0.1.0"
 dependencies = [
  "clap",
- "xdr_rpc",
+ "xdr_codegen",
 ]
 
 [[package]]
@@ -163,7 +163,7 @@ dependencies = [
 name = "test_xdr"
 version = "0.1.0"
 dependencies = [
- "xdr_rpc",
+ "xdr_codegen",
 ]
 
 [[package]]
@@ -252,5 +252,5 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 
 [[package]]
-name = "xdr_rpc"
+name = "xdr_codegen"
 version = "0.1.0"

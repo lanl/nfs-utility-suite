@@ -1,5 +1,5 @@
 fn main() {
-    xdr_rpc::Compiler::new()
+    xdr_codegen::Compiler::new()
         .file("protocol_definitions/rpcbind.x")
         .file("protocol_definitions/rpc_prot.x")
         .run()
