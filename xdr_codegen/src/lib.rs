@@ -62,12 +62,14 @@ enum InputSource {
 
 pub struct Compiler {
     source: InputSource,
+    params: codegen::Params,
 }
 
 impl Compiler {
     pub fn new() -> Self {
         Compiler {
             source: InputSource::StdIo,
+            params: codegen::Params::default(),
         }
     }
 
@@ -95,7 +97,10 @@ impl Compiler {
                 io::stdin().read_to_end(&mut source)?;
                 let source = String::from_utf8(source).expect("Input should be valid UTF-8");
 
-                print!("{}", Compiler::codegen(&source, "XdrInterface")?)
+                print!(
+                    "{}",
+                    Compiler::codegen(&source, "XdrInterface", &self.params)?
+                )
             }
             InputSource::Files(list) => {
                 for infile in list.iter() {
@@ -104,7 +109,7 @@ impl Compiler {
                     let module_name = infile
                         .file_stem()
                         .unwrap_or(std::ffi::OsStr::new("XdrInterface"));
-                    let code = Compiler::codegen(&source, module_name.to_str().unwrap())?;
+                    let code = Self::codegen(&source, module_name.to_str().unwrap(), &self.params)?;
 
                     let mut out_name = module_name.to_owned();
                     out_name.push(".rs");
@@ -119,10 +124,10 @@ impl Compiler {
         Ok(())
     }
 
-    fn codegen(source: &str, module_name: &str) -> Result<String> {
+    fn codegen(source: &str, module_name: &str, params: &codegen::Params) -> Result<String> {
         let mut parser = Parser::new(Scanner::new(&source));
         let schema = parser.parse()?;
         let validated_schema = validate::ValidatedSchema::validate(schema)?;
-        Ok(codegen::codegen(&validated_schema, module_name))
+        Ok(codegen::codegen(&validated_schema, module_name, params))
     }
 }

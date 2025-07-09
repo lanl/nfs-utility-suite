@@ -1,9 +1,26 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright 2025. Triad National Security, LLC.
 
+// This file does code generation for allocating serialization routines which return a Vec<u8>,
+// and de-serialization routines.
+
 use crate::ast::*;
 use crate::symbol_table::SymbolTable;
 use crate::validate::*;
+
+mod no_alloc;
+
+/// Parameters for code generation.
+pub struct Params {
+    /// Whether to include non-allocating serialization routines.
+    no_alloc: bool,
+}
+
+impl Default for Params {
+    fn default() -> Self {
+        Self { no_alloc: false }
+    }
+}
 
 const HELPERS: &str = r#"
 pub fn get_i32(dst: &mut i32, input: &mut &[u8]) -> Result<(), DeserializeError> {
@@ -87,7 +104,7 @@ enum FunctionKind {
     Method,
 }
 
-pub fn codegen(schema: &ValidatedSchema, module_name: &str) -> String {
+pub fn codegen(schema: &ValidatedSchema, module_name: &str, params: &Params) -> String {
     let mut buf = CodeBuf::new();
 
     buf.add_line("#[allow(non_camel_case_types, non_snake_case)]");
@@ -110,7 +127,7 @@ pub fn codegen(schema: &ValidatedSchema, module_name: &str) -> String {
                 .symbol_table
                 .lookup_definition(def)
                 .expect("Undefined name");
-            def.implementation(buf, &schema.symbol_table);
+            def.implementation(buf, &schema.symbol_table, &params);
         }
 
         for prog in schema.programs.iter() {
@@ -180,19 +197,18 @@ impl Definition {
     }
 
     /// The impl block for the type, including its serialize and deserialize methods.
-    fn implementation(&self, buf: &mut CodeBuf, tab: &SymbolTable) {
+    fn implementation(&self, buf: &mut CodeBuf, tab: &SymbolTable, params: &Params) {
         match self {
             Definition::Enum(e) => {
-                e.codegen(buf, tab);
+                e.codegen(buf, tab, params);
             }
             Definition::Struct(s) => {
-                s.codegen(buf, tab);
+                s.codegen(buf, tab, params);
             }
-            Definition::TypeDef(_) => {}
             Definition::Union(u) => {
-                u.codegen(buf, tab);
+                u.codegen(buf, tab, params);
             }
-            _ => {}
+            Definition::TypeDef(_) | Definition::Const(_) => {}
         }
     }
 
@@ -487,12 +503,15 @@ impl NamedDeclaration {
 }
 
 impl XdrUnion {
-    fn codegen(&self, buf: &mut CodeBuf, tab: &SymbolTable) {
+    fn codegen(&self, buf: &mut CodeBuf, tab: &SymbolTable, params: &Params) {
         self.default(buf, tab);
         buf.code_block(&format!("impl {}", self.name), |buf| {
             self.serialize_definition(buf, tab);
             buf.add_line("");
             self.deserialize_definition(buf, tab);
+            if params.no_alloc {
+                self.serialize_no_alloc(buf, tab);
+            }
         });
         buf.add_line("");
     }
@@ -775,12 +794,15 @@ impl XdrUnionEnumBody {
 }
 
 impl XdrStruct {
-    fn codegen(&self, buf: &mut CodeBuf, tab: &SymbolTable) {
+    fn codegen(&self, buf: &mut CodeBuf, tab: &SymbolTable, params: &Params) {
         self.default(buf, tab);
         buf.code_block(&format!("impl {}", self.name), |buf| {
             self.serialize_definition(buf, tab);
             buf.add_line("");
             self.deserialize_definition(buf, tab);
+            if params.no_alloc {
+                self.serialize_no_alloc(buf, tab);
+            }
         });
         buf.add_line("");
     }
@@ -852,12 +874,15 @@ impl XdrStruct {
 }
 
 impl XdrEnum {
-    fn codegen(&self, buf: &mut CodeBuf, tab: &SymbolTable) {
+    fn codegen(&self, buf: &mut CodeBuf, tab: &SymbolTable, params: &Params) {
         self.default(buf);
         buf.code_block(&format!("impl {}", self.name), |buf| {
             self.serialize_definition(buf, tab);
             buf.add_line("");
             self.deserialize_definition(buf, tab);
+            if params.no_alloc {
+                self.serialize_no_alloc(buf, tab);
+            }
         });
         buf.add_line("");
     }
