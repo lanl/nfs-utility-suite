@@ -114,7 +114,7 @@ impl Compiler {
             }
             InputSource::Files(list) => {
                 for infile in list.iter() {
-                    eprintln!("Handling file {:?}", infile.display());
+                    eprintln!("Starting file {:?}", infile.display());
                     let source = std::fs::read_to_string(infile)?;
                     let module_name = infile
                         .file_stem()
@@ -127,6 +127,7 @@ impl Compiler {
                     let mut out_file = PathBuf::from(out_file);
                     out_file.push(out_name);
                     std::fs::write(out_file, code)?;
+                    eprintln!("Finished file {:?}", infile.display());
                 }
             }
         };
