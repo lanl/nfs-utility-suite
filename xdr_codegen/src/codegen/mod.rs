@@ -91,6 +91,25 @@ pub fn serialize_bool(src: &bool) -> [u8; 4] {
     }
 }
 
+pub fn encode_padding(offset: usize, buf: &mut [u8]) -> usize {
+    match offset % 4 {
+        0 => return 0,
+        1 => {
+            buf[offset..offset + 3].copy_from_slice(&[0u8; 3]);
+            return 3;
+        }
+        2 => {
+            buf[offset..offset + 2].copy_from_slice(&[0u8; 2]);
+            return 2;
+        }
+        3 => {
+            buf[offset..offset + 1].copy_from_slice(&[0u8; 1]);
+            return 1;
+        }
+        _ => unsafe { std::hint::unreachable_unchecked() },
+    }
+}
+
 #[derive(Debug)]
 pub struct DeserializeError;
 

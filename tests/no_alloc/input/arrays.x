@@ -4,3 +4,11 @@ struct OpaqueArrays {
 	opaque c[3];
 	opaque d[4];
 };
+
+struct LimitedOpaqueArrays {
+	opaque a<1>;
+	opaque b<2>;
+	opaque c<3>;
+	opaque d<4>;
+	opaque e<7>;
+};

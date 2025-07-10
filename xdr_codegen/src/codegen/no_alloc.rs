@@ -78,23 +78,41 @@ impl NamedDeclaration {
 }
 
 impl Array {
-    fn serialize_no_alloc_inline(&self, var_name: &str, buf: &mut CodeBuf, _tab: &SymbolTable) {
-        match &self.size {
-            ArraySize::Fixed(_) => {}
-            _ => todo!(),
-        };
+    fn serialize_no_alloc_inline(&self, var_name: &str, buf: &mut CodeBuf, tab: &SymbolTable) {
+        self.encode_size(var_name, buf, tab);
+
         match &self.kind {
             ArrayKind::Byte => {
                 buf.add_line(&format!(
                     "buf[offset..offset + {var_name}.len()].copy_from_slice(&{var_name});"
                 ));
                 buf.add_line(&format!("offset += {var_name}.len();"));
-                buf.add_line(&format!("let padding = (4 - {var_name}.len() % 4) % 4;"));
-                buf.add_line("buf[offset..offset + padding].copy_from_slice(&vec![0; padding]);");
-                buf.add_line("offset += padding;");
+                buf.add_line("offset += helpers::encode_padding(offset, buf);");
             }
             _ => todo!(),
         };
+    }
+
+    /// Generate the code that encodes the size of a variable length array into the message.
+    ///
+    /// For limited-size arrays, this adds an assert that the user does not try to encode an array
+    /// exceeding the limit.
+    fn encode_size(&self, var_name: &str, buf: &mut CodeBuf, tab: &SymbolTable) {
+        match &self.size {
+            // The length of a fixed-length array does not need to be encoded.
+            ArraySize::Fixed(_) => return,
+            ArraySize::Limited(lim) => {
+                let lim = lim.as_const(tab);
+                // It is a bug to try to encode a too-large variable length array.
+                buf.add_line(&format!("assert!({var_name}.len() <= {lim});"));
+            }
+            ArraySize::Unlimited => {}
+        };
+
+        buf.add_line(&format!(
+            "buf[offset..offset + 4].copy_from_slice(&({var_name}.len() as u32).to_be_bytes());"
+        ));
+        buf.add_line("offset += 4;");
     }
 }
 
