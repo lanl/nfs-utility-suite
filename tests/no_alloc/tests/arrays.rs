@@ -62,3 +62,17 @@ fn limited_length_array_exceeded() {
 
     let _ = before.serialize(&mut bytes);
 }
+
+#[test]
+fn unlimited_byte_arrayh() {
+    let before = UnlimitedOpaqueArray { data: vec![7; 499] };
+
+    let mut bytes = vec![1u8; 504];
+
+    assert_eq!(504, before.serialize(&mut bytes));
+
+    let mut after = UnlimitedOpaqueArray::default();
+    UnlimitedOpaqueArray::deserialize(&mut after, &mut bytes.as_slice()).unwrap();
+
+    assert_eq!(before, after);
+}

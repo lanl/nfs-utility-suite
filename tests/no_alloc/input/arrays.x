@@ -12,3 +12,7 @@ struct LimitedOpaqueArrays {
 	opaque d<4>;
 	opaque e<7>;
 };
+
+struct UnlimitedOpaqueArray {
+	opaque data<>;
+};
