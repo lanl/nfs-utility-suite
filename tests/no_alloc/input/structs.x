@@ -4,3 +4,9 @@ struct Foo {
 	hyper c;
 	unsigned hyper d;
 };
+
+struct Container {
+	Foo first;
+	bool middle;
+	Foo last;
+};

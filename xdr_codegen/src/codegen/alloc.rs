@@ -247,7 +247,7 @@ impl XdrType {
         };
 
         // The typedef case was already handled, non-typedefs follow:
-        let serialize_method = self.serialize_method_string(var_name, SerializeKind::Alloc, tab);
+        let serialize_method = self.serialize_method_string(var_name, tab);
         buf.add_line(&format!("let bytes = {serialize_method};"));
         buf.add_line("buf.extend_from_slice(&bytes);");
     }

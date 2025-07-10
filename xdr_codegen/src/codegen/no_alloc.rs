@@ -62,18 +62,32 @@ impl NamedDeclaration {
 
 impl XdrType {
     fn serialize_no_alloc_inline(&self, var_name: &str, buf: &mut CodeBuf, tab: &SymbolTable) {
-        if let XdrType::Name(_name) = self {
-            // TODO: add this...
-            return;
-        }
-        let width = self.width();
-        let serialize_method = self.serialize_method_string(var_name, SerializeKind::NoAlloc, tab);
+        match self {
+            XdrType::Name(name) => {
+                let definition = tab.lookup_definition(name).unwrap();
+                if let Definition::TypeDef(ref tdef) = *definition {
+                    match &tdef.decl {
+                        Declaration::Void => panic!("Void typedefs are not currently supported"),
+                        Declaration::Named(_n) => todo!(),
+                    };
+                    // return;
+                };
 
-        buf.add_line(&format!(
-            "buf[offset..offset + {width}].copy_from_slice(&{serialize_method});"
-        ));
+                buf.add_line(&format!(
+                    "offset += {var_name}.serialize(&mut buf[offset..]);"
+                ));
+            }
+            _ => {
+                let width = self.width();
+                let serialize_method = self.serialize_method_string(var_name, tab);
 
-        buf.add_line(&format!("offset += {width};"));
+                buf.add_line(&format!(
+                    "buf[offset..offset + {width}].copy_from_slice(&{serialize_method});"
+                ));
+
+                buf.add_line(&format!("offset += {width};"));
+            }
+        };
     }
 
     /// Returns the width of a primitive scalar type. E.g., int is 4.

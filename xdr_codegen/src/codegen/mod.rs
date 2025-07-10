@@ -112,12 +112,6 @@ enum FunctionKind {
     Method,
 }
 
-/// Serialization method kind: either allocating, or non-allocating.
-enum SerializeKind {
-    Alloc,
-    NoAlloc,
-}
-
 pub fn codegen(schema: &ValidatedSchema, module_name: &str, params: &Params) -> String {
     let mut buf = CodeBuf::new();
 
@@ -641,22 +635,18 @@ impl XdrType {
     }
 
     /// Given a variable named `var_name`, generate the appropriate code to serialize it based on
-    /// its type and whether the `kind` of serializer is allocating or non-allocating.
+    /// its type. Note that this assumes the serializer is allocating (non-allocating serializer
+    /// doesn't use this method.)
     ///
     /// For example, given an XdrType::Int named `foo`, returns:
     ///
     ///     "foo.to_be_bytes()"
     ///
-    /// or given an XdrType::Name("bar"), and an allocating serializer, returns:
+    /// or given an XdrType::Name("bar"):
     ///
     ///     "bar.serialize_alloc()"
-    fn serialize_method_string(
-        &self,
-        var_name: &str,
-        kind: SerializeKind,
-        tab: &SymbolTable,
-    ) -> String {
-        let (func_name, func_kind) = self.serialize_method(kind, tab);
+    fn serialize_method_string(&self, var_name: &str, tab: &SymbolTable) -> String {
+        let (func_name, func_kind) = self.serialize_method(tab);
         match func_kind {
             FunctionKind::Function => {
                 format!("{func_name}(&{var_name})")
@@ -675,7 +665,7 @@ impl XdrType {
     ///                      ^^^^^^
     ///    `v.extend_from_slice(&bytes);`
     ///
-    fn serialize_method(&self, kind: SerializeKind, tab: &SymbolTable) -> (String, FunctionKind) {
+    fn serialize_method(&self, tab: &SymbolTable) -> (String, FunctionKind) {
         let method = match self {
             XdrType::Int => "to_be_bytes()",
             XdrType::UInt => "to_be_bytes()",
@@ -694,10 +684,7 @@ impl XdrType {
                 Definition::TypeDef(_) => unreachable!(
                     "BUG: Typedef should have already been handled in serialize_inline()"
                 ),
-                _ => match kind {
-                    SerializeKind::Alloc => "serialize_alloc()",
-                    SerializeKind::NoAlloc => "serialize()",
-                },
+                _ => "serialize_alloc()",
             },
         }
         .to_string();
