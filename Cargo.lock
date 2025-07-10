@@ -160,14 +160,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "test_xdr"
+name = "test_alloc"
 version = "0.1.0"
 dependencies = [
  "xdr_codegen",
 ]
 
 [[package]]
-name = "test_xdr_no_alloc"
+name = "test_no_alloc"
 version = "0.1.0"
 dependencies = [
  "xdr_codegen",
