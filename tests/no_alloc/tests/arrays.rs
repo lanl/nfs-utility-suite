@@ -105,3 +105,44 @@ fn limited_length_string_exceeded() {
 
     let _ = before.serialize(&mut bytes);
 }
+
+#[test]
+fn arrays_of_user_defined_type() {
+    let mut before = IntArrays::default();
+    for i in 0..4 {
+        before.fixed[i] = AnInt { a: i as u32 };
+    }
+    for i in 0..7 {
+        before.limited.push(AnInt {
+            a: u32::MAX - i as u32,
+        });
+    }
+    for i in 0..512 {
+        before.unlimited.push(AnInt {
+            a: u32::MAX - i as u32,
+        });
+    }
+
+    let mut bytes = [1; 2100];
+
+    assert_eq!(2100, before.serialize(&mut bytes));
+
+    let mut after = IntArrays::default();
+
+    IntArrays::deserialize(&mut after, &mut bytes.as_slice()).unwrap();
+
+    assert_eq!(before, after);
+}
+
+#[test]
+#[should_panic]
+fn too_long_array_of_user_defined_type() {
+    let mut before = IntArrays::default();
+    for i in 0..8 {
+        before.limited.push(AnInt { a: i });
+    }
+
+    let mut bytes = [1; 2100];
+
+    let _ = before.serialize(&mut bytes);
+}

@@ -81,8 +81,12 @@ impl Array {
     fn serialize_no_alloc_inline(&self, var_name: &str, buf: &mut CodeBuf, tab: &SymbolTable) {
         self.encode_size(var_name, buf, tab);
 
-        if let ArrayKind::UserType(_) = &self.kind {
-            todo!();
+        if let ArrayKind::UserType(ty) = &self.kind {
+            buf.block_statement(&format!("for item in {var_name}.iter()"), |buf| {
+                ty.serialize_no_alloc_inline("item", buf, tab);
+            });
+
+            return;
         };
 
         match &self.kind {

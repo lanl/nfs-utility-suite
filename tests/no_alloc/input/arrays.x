@@ -21,3 +21,13 @@ struct Strings {
 	string lim<10>;
 	string unlim<>;
 };
+
+struct AnInt {
+	unsigned int a;
+};
+
+struct IntArrays {
+	AnInt fixed[4];
+	AnInt limited<7>;
+	AnInt unlimited<>;
+};
