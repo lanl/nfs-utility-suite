@@ -71,8 +71,30 @@ impl NamedDeclaration {
         };
         match &self.kind {
             DeclarationKind::Scalar(ty) => ty.serialize_no_alloc_inline(&var_name, buf, tab),
-            _ => todo!(),
+            DeclarationKind::Array(a) => a.serialize_no_alloc_inline(&var_name, buf, tab),
+            DeclarationKind::Optional(_) => todo!(),
         }
+    }
+}
+
+impl Array {
+    fn serialize_no_alloc_inline(&self, var_name: &str, buf: &mut CodeBuf, _tab: &SymbolTable) {
+        match &self.size {
+            ArraySize::Fixed(_) => {}
+            _ => todo!(),
+        };
+        match &self.kind {
+            ArrayKind::Byte => {
+                buf.add_line(&format!(
+                    "buf[offset..offset + {var_name}.len()].copy_from_slice(&{var_name});"
+                ));
+                buf.add_line(&format!("offset += {var_name}.len();"));
+                buf.add_line(&format!("let padding = (4 - {var_name}.len() % 4) % 4;"));
+                buf.add_line("buf[offset..offset + padding].copy_from_slice(&vec![0; padding]);");
+                buf.add_line("offset += padding;");
+            }
+            _ => todo!(),
+        };
     }
 }
 
