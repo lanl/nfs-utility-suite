@@ -110,6 +110,12 @@ enum FunctionKind {
     Method,
 }
 
+/// Serialization method kind: either allocating, or non-allocating.
+enum SerializeKind {
+    Alloc,
+    NoAlloc,
+}
+
 pub fn codegen(schema: &ValidatedSchema, module_name: &str, params: &Params) -> String {
     let mut buf = CodeBuf::new();
 
@@ -1022,16 +1028,36 @@ impl XdrType {
         };
 
         // The typedef case was already handled, non-typedefs follow:
-        let (func_name, func_kind) = self.serialize_method(tab);
+        let serialize_method = self.serialize_method_string(var_name, SerializeKind::Alloc, tab);
+        buf.add_line(&format!("let bytes = {serialize_method};"));
+        buf.add_line("buf.extend_from_slice(&bytes);");
+    }
+
+    /// Given a variable named `var_name`, generate the appropriate code to serialize it based on
+    /// its type and whether the `kind` of serializer is allocating or non-allocating.
+    ///
+    /// For example, given an XdrType::Int named `foo`, returns:
+    ///
+    ///     "foo.to_be_bytes()"
+    ///
+    /// or given an XdrType::Name("bar"), and an allocating serializer, returns:
+    ///
+    ///     "bar.serialize_alloc()"
+    fn serialize_method_string(
+        &self,
+        var_name: &str,
+        kind: SerializeKind,
+        tab: &SymbolTable,
+    ) -> String {
+        let (func_name, func_kind) = self.serialize_method(kind, tab);
         match func_kind {
             FunctionKind::Function => {
-                buf.add_line(&format!("let bytes = {func_name}(&{var_name});"));
+                format!("{func_name}(&{var_name})")
             }
             FunctionKind::Method => {
-                buf.add_line(&format!("let bytes = {var_name}.{func_name};"));
+                format!("{var_name}.{func_name}")
             }
-        };
-        buf.add_line("buf.extend_from_slice(&bytes);");
+        }
     }
 
     /// Add the method to serialize an XdrType, assumed to be inline within a function for a
@@ -1042,7 +1068,7 @@ impl XdrType {
     ///                      ^^^^^^
     ///    `v.extend_from_slice(&bytes);`
     ///
-    fn serialize_method(&self, tab: &SymbolTable) -> (String, FunctionKind) {
+    fn serialize_method(&self, kind: SerializeKind, tab: &SymbolTable) -> (String, FunctionKind) {
         let method = match self {
             XdrType::Int => "to_be_bytes()",
             XdrType::UInt => "to_be_bytes()",
@@ -1061,7 +1087,10 @@ impl XdrType {
                 Definition::TypeDef(_) => unreachable!(
                     "BUG: Typedef should have already been handled in serialize_inline()"
                 ),
-                _ => "serialize_alloc()",
+                _ => match kind {
+                    SerializeKind::Alloc => "serialize_alloc()",
+                    SerializeKind::NoAlloc => "serialize()",
+                },
             },
         }
         .to_string();

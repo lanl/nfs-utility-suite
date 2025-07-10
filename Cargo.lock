@@ -167,6 +167,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "test_xdr_no_alloc"
+version = "0.1.0"
+dependencies = [
+ "xdr_codegen",
+]
+
+[[package]]
 name = "unicode-ident"
 version = "1.0.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"

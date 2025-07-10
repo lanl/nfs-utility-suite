@@ -6,6 +6,7 @@ edition = "2021"
 [lib]
 name = "xdr_codegen"
 path = "src/lib.rs"
+doctest = false
 
 [[bin]]
 name = "xdr_codegen"

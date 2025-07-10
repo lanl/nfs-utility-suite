@@ -1,0 +1,7 @@
+[package]
+name = "test_xdr_no_alloc"
+version = "0.1.0"
+edition = "2021"
+
+[build-dependencies]
+xdr_codegen = { path = "../xdr_codegen" }
