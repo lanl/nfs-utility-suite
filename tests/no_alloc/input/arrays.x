@@ -16,3 +16,8 @@ struct LimitedOpaqueArrays {
 struct UnlimitedOpaqueArray {
 	opaque data<>;
 };
+
+struct Strings {
+	string lim<10>;
+	string unlim<>;
+};

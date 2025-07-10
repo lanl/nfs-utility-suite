@@ -81,16 +81,26 @@ impl Array {
     fn serialize_no_alloc_inline(&self, var_name: &str, buf: &mut CodeBuf, tab: &SymbolTable) {
         self.encode_size(var_name, buf, tab);
 
+        if let ArrayKind::UserType(_) = &self.kind {
+            todo!();
+        };
+
         match &self.kind {
             ArrayKind::Byte => {
                 buf.add_line(&format!(
                     "buf[offset..offset + {var_name}.len()].copy_from_slice(&{var_name});"
                 ));
-                buf.add_line(&format!("offset += {var_name}.len();"));
-                buf.add_line("offset += helpers::encode_padding(offset, buf);");
             }
-            _ => todo!(),
+            ArrayKind::Ascii => {
+                buf.add_line(&format!(
+                    "buf[offset..offset + {var_name}.len()].copy_from_slice(&{var_name}.as_bytes());"
+                ));
+            }
+            ArrayKind::UserType(_) => unreachable!(), // already handled above
         };
+
+        buf.add_line(&format!("offset += {var_name}.len();"));
+        buf.add_line("offset += helpers::encode_padding(offset, buf);");
     }
 
     /// Generate the code that encodes the size of a variable length array into the message.

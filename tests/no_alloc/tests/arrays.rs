@@ -64,7 +64,7 @@ fn limited_length_array_exceeded() {
 }
 
 #[test]
-fn unlimited_byte_arrayh() {
+fn unlimited_byte_array() {
     let before = UnlimitedOpaqueArray { data: vec![7; 499] };
 
     let mut bytes = vec![1u8; 504];
@@ -75,4 +75,33 @@ fn unlimited_byte_arrayh() {
     UnlimitedOpaqueArray::deserialize(&mut after, &mut bytes.as_slice()).unwrap();
 
     assert_eq!(before, after);
+}
+
+#[test]
+fn strings() {
+    let before = Strings {
+        lim: "hello".into(),
+        unlim: "world!!!".into(),
+    };
+
+    let mut bytes = vec![1u8; 24];
+    assert_eq!(24, before.serialize(&mut bytes));
+
+    let mut after = Strings::default();
+    Strings::deserialize(&mut after, &mut bytes.as_slice()).unwrap();
+
+    assert_eq!(before, after);
+}
+
+#[test]
+#[should_panic]
+fn limited_length_string_exceeded() {
+    let before = Strings {
+        lim: "hello, world!".into(),
+        unlim: "".into(),
+    };
+
+    let mut bytes = vec![0; 36];
+
+    let _ = before.serialize(&mut bytes);
 }
