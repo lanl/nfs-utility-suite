@@ -309,7 +309,15 @@ impl Array {
     // XXX: represent arrays as slices instead of as vectors?
     fn as_type_name(&self, tab: &SymbolTable) -> String {
         let inner_type = match &self.kind {
-            ArrayKind::Ascii => return "std::ffi::OsString".to_string(),
+            ArrayKind::Ascii => {
+                return match &self.size {
+                    ArraySize::Limited(lim) => {
+                        let lim = lim.as_const(tab);
+                        format!("std::ffi::OsString /* max length: {lim} */")
+                    }
+                    _ => "std::ffi::OsString".to_string(),
+                };
+            }
             ArrayKind::Byte => "u8".to_string(),
             ArrayKind::UserType(ty) => ty.as_type_name(tab),
         };
@@ -326,7 +334,10 @@ impl Array {
                 format!("[{inner_type}; {len}]")
             }
             // XXX: different representation for upper-bounded array?
-            ArraySize::Limited(_) => format!("Vec<{inner_type}>"),
+            ArraySize::Limited(lim) => {
+                let lim = lim.as_const(tab);
+                format!("Vec<{inner_type}> /* max length: {lim} */")
+            }
             ArraySize::Unlimited => format!("Vec<{inner_type}>"),
         }
     }
