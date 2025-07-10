@@ -10,3 +10,9 @@ struct Container {
 	bool middle;
 	Foo last;
 };
+
+typedef int my_int_type;
+
+struct HasTypedef {
+	my_int_type blah;
+};

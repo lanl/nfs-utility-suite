@@ -27,7 +27,7 @@ impl XdrStruct {
                     continue;
                 };
                 buf.add_line(&format!("// {}:", decl.name));
-                decl.serialize_no_alloc_inline(buf, tab);
+                decl.serialize_no_alloc_inline(None, buf, tab);
             }
             buf.add_line("offset");
         });
@@ -51,8 +51,24 @@ impl XdrEnum {
 }
 
 impl NamedDeclaration {
-    fn serialize_no_alloc_inline(&self, buf: &mut CodeBuf, tab: &SymbolTable) {
-        let var_name = format!("self.{}", self.name);
+    /// Generate code to serialize a named declaration without allocating, inline within the
+    /// serialization routine of a container type.
+    ///
+    /// When `override_name` is `None`, then this uses `self.member_name` as the name of the field.
+    /// However, this does not work for typedefs, as the name of the typedef would be
+    /// `member_name`, instead of the name of the field in its container type.
+    /// Thus, for typedefs, the caller will pass in `Some(name)` for `override_name`, since only
+    /// the caller knows the actual field name.
+    fn serialize_no_alloc_inline(
+        &self,
+        override_name: Option<&str>,
+        buf: &mut CodeBuf,
+        tab: &SymbolTable,
+    ) {
+        let var_name = match override_name {
+            Some(name) => name.to_string(),
+            None => format!("self.{}", self.name),
+        };
         match &self.kind {
             DeclarationKind::Scalar(ty) => ty.serialize_no_alloc_inline(&var_name, buf, tab),
             _ => todo!(),
@@ -68,9 +84,11 @@ impl XdrType {
                 if let Definition::TypeDef(ref tdef) = *definition {
                     match &tdef.decl {
                         Declaration::Void => panic!("Void typedefs are not currently supported"),
-                        Declaration::Named(_n) => todo!(),
+                        Declaration::Named(n) => {
+                            n.serialize_no_alloc_inline(Some(var_name), buf, tab)
+                        }
                     };
-                    // return;
+                    return;
                 };
 
                 buf.add_line(&format!(
@@ -91,6 +109,10 @@ impl XdrType {
     }
 
     /// Returns the width of a primitive scalar type. E.g., int is 4.
+    ///
+    /// Panics if the type isn't a primitive type (i.e., it is the name of another type which could
+    /// be a typedef, struct, union, etc.). Type names should be fully resolved to an underlying
+    /// primitive type before calling this method.
     fn width(&self) -> u32 {
         match self {
             XdrType::Int => 4,

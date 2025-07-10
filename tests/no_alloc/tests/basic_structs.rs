@@ -69,3 +69,18 @@ fn struct_with_inner_struct() {
 
     assert_eq!(before, after);
 }
+
+#[test]
+fn struct_with_typedef() {
+    let before = HasTypedef { blah: -12345 };
+
+    let mut bytes = vec![0; 4];
+
+    assert_eq!(4, before.serialize(&mut bytes));
+
+    let mut after = HasTypedef::default();
+
+    HasTypedef::deserialize(&mut after, &mut bytes.as_slice()).unwrap();
+
+    assert_eq!(before, after);
+}
