@@ -138,7 +138,6 @@ fn optional() {
     let bytes = head.serialize_alloc();
     let mut after = ListBegin::default();
     ListBegin::deserialize(&mut after, &mut bytes.as_slice()).unwrap();
-    eprintln!("{:?}", after);
     assert_eq!(head, after);
 }
 

@@ -182,6 +182,16 @@ struct dirlist3 {
 ```
 `dirlist3` is the needed container type.
 
+#### Non-recursive optionals
+
+Although non-recursive optionals seem to be rare or non-existent in practice, they are possible. A
+non-recursive optional is simply encoded as a Rust `Option`. `struct Option { int *maybe; };` becomes:
+```Rust
+pub struct Option {
+    pub maybe: Option<i32>,
+}
+```
+
 #### Naming Conventions
 
 XDR normally uses snake_case for type names, while Rust uses CamelCase. This library makes no
@@ -204,6 +214,5 @@ Here are some relevant RFCs:
   - [RFC 5662](https://datatracker.ietf.org/doc/html/rfc5662) - NFS v4.1 XDR/RPC Specification
 - [RFC 7862](https://datatracker.ietf.org/doc/html/rfc7862)  - NFS v4.2 Protocol
   - [RFC 7863](https://datatracker.ietf.org/doc/html/rfc7863) - NFS v4.2 XDR/RPC Specification
-
 - [RFC 8434](https://datatracker.ietf.org/doc/html/rfc8434) - Requirements for PNFS Layout Types
 - [RFC 8435](https://datatracker.ietf.org/doc/html/rfc8435) - PNFS Flex Files Layout Specification

@@ -72,7 +72,9 @@ impl NamedDeclaration {
         match &self.kind {
             DeclarationKind::Scalar(ty) => ty.serialize_no_alloc_inline(&var_name, buf, tab),
             DeclarationKind::Array(a) => a.serialize_no_alloc_inline(&var_name, buf, tab),
-            DeclarationKind::Optional(_) => todo!(),
+            DeclarationKind::Optional(ty) => {
+                ty.serialize_optional_no_alloc_inline(&var_name, buf, tab)
+            }
         }
     }
 }
@@ -160,6 +162,30 @@ impl XdrType {
                 buf.add_line(&format!("offset += {width};"));
             }
         };
+    }
+
+    fn serialize_optional_no_alloc_inline(&self, name: &str, buf: &mut CodeBuf, tab: &SymbolTable) {
+        if self.self_referential_optional(tab) {
+            buf.code_block(&format!("for item in {name}.iter()"), |buf| {
+                buf.add_line("buf[offset..offset + 4].copy_from_slice(&1_i32.to_be_bytes());");
+                buf.add_line("offset += 4;");
+                self.serialize_no_alloc_inline("item", buf, tab);
+            });
+            buf.add_line("buf[offset..offset + 4].copy_from_slice(&0_i32.to_be_bytes());");
+            buf.add_line("offset += 4;");
+        } else {
+            buf.block_statement(&format!("match &{name}"), |buf| {
+                buf.code_block("Some(inner) => ", |buf| {
+                    buf.add_line("buf[offset..offset + 4].copy_from_slice(&1_i32.to_be_bytes());");
+                    buf.add_line("offset += 4;");
+                    self.serialize_no_alloc_inline("inner", buf, tab);
+                });
+                buf.code_block("None => ", |buf| {
+                    buf.add_line("buf[offset..offset + 4].copy_from_slice(&0_i32.to_be_bytes());");
+                    buf.add_line("offset += 4;");
+                });
+            });
+        }
     }
 
     /// Returns the width of a primitive scalar type. E.g., int is 4.
