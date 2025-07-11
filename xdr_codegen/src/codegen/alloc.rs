@@ -91,7 +91,7 @@ impl XdrUnion {
             "pub fn serialize_alloc(&self) -> Vec<u8>",
             |buf| match &self.body {
                 XdrUnionBody::Bool(b) => b.serialize_bool(buf, tab),
-                XdrUnionBody::Enum(e) => e.serialize_enum(buf, tab),
+                XdrUnionBody::Enum(e) => e.serialize_enum(buf, tab, true),
             },
         );
     }
@@ -114,84 +114,6 @@ impl XdrUnionBoolBody {
             });
             buf.add_line("None => 0_u32.to_be_bytes().to_vec(),");
         });
-    }
-}
-
-impl XdrUnionEnumBody {
-    fn serialize_enum(&self, buf: &mut CodeBuf, tab: &SymbolTable) {
-        let mut max_disc = 0; // Used to determine the discriminant for a default
-                              // arm, when present.
-        buf.add_line("let mut buf = Vec::new();");
-        buf.code_block("match self", |buf| {
-            for arm in self.arms.iter() {
-                let arm_name = XdrUnionEnumBody::arm_name(&arm.0);
-                match &arm.1 {
-                    Declaration::Void => {
-                        buf.code_block(&format!("Self::{arm_name} => "), |buf| {
-                            max_disc =
-                                self.serialize_discriminant_value(&arm.0, max_disc, buf, tab);
-                            buf.add_line("// void");
-                        });
-                    }
-                    Declaration::Named(n) => {
-                        buf.code_block(&format!("Self::{arm_name}(inner) => "), |buf| {
-                            max_disc =
-                                self.serialize_discriminant_value(&arm.0, max_disc, buf, tab);
-                            n.serialize_inline(Some("inner"), Context::InUnion, buf, tab);
-                        });
-                    }
-                };
-            }
-            if let Some(default_arm) = &self.default_arm {
-                match default_arm {
-                    Declaration::Void => {
-                        buf.code_block("Self::Default => ", |buf| {
-                            let _ = self.serialize_discriminant_value(
-                                &Value::Int(max_disc + 1),
-                                0,
-                                buf,
-                                tab,
-                            );
-                            buf.add_line("// void");
-                        });
-                    }
-                    Declaration::Named(n) => {
-                        buf.code_block("Self::Default(inner) => ", |buf| {
-                            let _ = self.serialize_discriminant_value(
-                                &Value::Int(max_disc + 1),
-                                0,
-                                buf,
-                                tab,
-                            );
-                            n.serialize_inline(Some("inner"), Context::InUnion, buf, tab);
-                        });
-                    }
-                };
-            }
-        });
-        buf.add_line("buf");
-    }
-    /// Get the value of `val` as a u64, and then serialize it.
-    ///
-    /// Compare it to `max_disc` and return the larger of the two. This is to serialize default
-    /// arms: they should use a discriminant value that doesn't get used for another arm.
-    fn serialize_discriminant_value(
-        &self,
-        val: &Value,
-        max_disc: u64,
-        buf: &mut CodeBuf,
-        tab: &SymbolTable,
-    ) -> u64 {
-        let disc = self.get_discriminant_value(val, tab);
-        buf.add_line(&format!(
-            "buf.extend_from_slice(&{disc}_i32.to_be_bytes());"
-        ));
-
-        if disc > max_disc {
-            disc
-        } else {
-            max_disc
-        }
     }
 }
 

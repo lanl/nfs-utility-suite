@@ -485,6 +485,109 @@ impl XdrUnionEnumBody {
             }
         })
     }
+
+    /// Serialize an Enum union, either using allocating or non-allocating code depending on the
+    /// value of `alloc`.
+    fn serialize_enum(&self, buf: &mut CodeBuf, tab: &SymbolTable, alloc: bool) {
+        let mut max_disc = 0; // Used to determine the discriminant for a default
+                              // arm, when present.
+        if alloc {
+            buf.add_line("let mut buf = Vec::new();");
+        }
+        buf.code_block("match self", |buf| {
+            for arm in &self.arms {
+                let arm_name = XdrUnionEnumBody::arm_name(&arm.0);
+                match &arm.1 {
+                    Declaration::Void => {
+                        buf.code_block(&format!("Self::{arm_name} => "), |buf| {
+                            max_disc = self
+                                .serialize_discriminant_value(&arm.0, max_disc, buf, tab, alloc);
+                            buf.add_line("// void");
+                        });
+                    }
+                    Declaration::Named(n) => {
+                        buf.code_block(&format!("Self::{arm_name}(inner) => "), |buf| {
+                            max_disc = self
+                                .serialize_discriminant_value(&arm.0, max_disc, buf, tab, alloc);
+                            if alloc {
+                                n.serialize_inline(Some("inner"), Context::InUnion, buf, tab);
+                            } else {
+                                n.serialize_no_alloc_inline(Some("inner"), buf, tab);
+                            }
+                        });
+                    }
+                };
+            }
+            if let Some(default_arm) = &self.default_arm {
+                match default_arm {
+                    Declaration::Void => {
+                        buf.code_block("Self::Default => ", |buf| {
+                            let _ = self.serialize_discriminant_value(
+                                &Value::Int(max_disc + 1),
+                                0,
+                                buf,
+                                tab,
+                                alloc,
+                            );
+                            buf.add_line("// void");
+                        });
+                    }
+                    Declaration::Named(n) => {
+                        buf.code_block("Self::Default(inner) => ", |buf| {
+                            let _ = self.serialize_discriminant_value(
+                                &Value::Int(max_disc + 1),
+                                0,
+                                buf,
+                                tab,
+                                alloc,
+                            );
+                            if alloc {
+                                n.serialize_inline(Some("inner"), Context::InUnion, buf, tab);
+                            } else {
+                                n.serialize_no_alloc_inline(Some("inner"), buf, tab);
+                            }
+                        });
+                    }
+                };
+            }
+        });
+        if alloc {
+            buf.add_line("buf");
+        }
+    }
+
+    /// Get the value of `val` as a u64, and then write the code to serialize it according to
+    /// `alloc`.
+    ///
+    /// Compare it to `max_disc` and return the larger of the two. This is to serialize default
+    /// arms: they should use a discriminant value that doesn't get used for another arm.
+    ///
+    /// Panics if `val` won't fit into an `i32` -- it is an error to try to use such a large value
+    /// as an Enum variant because the XDR spec requires Enum variants be encoded as signed ints.
+    fn serialize_discriminant_value(
+        &self,
+        val: &Value,
+        max_disc: u64,
+        buf: &mut CodeBuf,
+        tab: &SymbolTable,
+        alloc: bool,
+    ) -> u64 {
+        let disc = self.get_discriminant_value(val, tab);
+        if alloc {
+            let disc: i32 = disc.try_into().unwrap();
+            buf.add_line(&format!(
+                "buf.extend_from_slice(&{disc}_i32.to_be_bytes());"
+            ));
+        } else {
+            buf.serialize_int(disc.try_into().unwrap());
+        }
+
+        if disc > max_disc {
+            disc
+        } else {
+            max_disc
+        }
+    }
     fn default_enum(&self, buf: &mut CodeBuf, tab: &SymbolTable) {
         let (value, declaration) = &self.arms[0];
         let name = match &value {

@@ -40,7 +40,7 @@ impl XdrUnion {
             buf.add_line("let mut offset = 0;");
             match &self.body {
                 XdrUnionBody::Bool(b) => b.serialize_no_alloc(buf, tab),
-                XdrUnionBody::Enum(b) => b.serialize_no_alloc(buf, tab),
+                XdrUnionBody::Enum(b) => b.serialize_enum(buf, tab, false),
             };
             buf.add_line("offset");
         });
@@ -62,10 +62,6 @@ impl XdrUnionBoolBody {
             buf.code_block("None => ", |buf| buf.serialize_int(0));
         });
     }
-}
-
-impl XdrUnionEnumBody {
-    fn serialize_no_alloc(&self, buf: &mut CodeBuf, tab: &SymbolTable) {}
 }
 
 impl XdrEnum {
@@ -94,7 +90,7 @@ impl NamedDeclaration {
     /// `member_name`, instead of the name of the field in its container type.
     /// Thus, for typedefs, the caller will pass in `Some(name)` for `override_name`, since only
     /// the caller knows the actual field name.
-    fn serialize_no_alloc_inline(
+    pub(super) fn serialize_no_alloc_inline(
         &self,
         override_name: Option<&str>,
         buf: &mut CodeBuf,
@@ -241,7 +237,7 @@ impl XdrType {
 
 impl CodeBuf {
     /// Write into `self` the code to serialize a signed integer `val`.
-    fn serialize_int(&mut self, val: i32) {
+    pub(super) fn serialize_int(&mut self, val: i32) {
         self.add_line(&format!(
             "buf[offset..offset + 4].copy_from_slice(&{val}_i32.to_be_bytes());"
         ));

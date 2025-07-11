@@ -186,9 +186,9 @@ struct dirlist3 {
 #### Non-recursive optionals
 
 Although non-recursive optionals seem to be rare or non-existent in practice, they are possible. A
-non-recursive optional is simply encoded as a Rust `Option`. `struct Option { int *maybe; };` becomes:
+non-recursive optional is simply encoded as a Rust `Option`. `struct MyOption { int *maybe; };` becomes:
 ```Rust
-pub struct Option {
+pub struct MyOption {
     pub maybe: Option<i32>,
 }
 ```
@@ -232,7 +232,6 @@ pub enum Cases {
 
 XDR unions come in multiple flavors depending on the type of the discriminant. Bool-discriminated
 unions are the simplest, represented in Rust as `Option`s:
-
 <table>
 <tr>
 <th>XDR</th>
@@ -264,6 +263,57 @@ pub struct MyOption {
 </table>
 
 When the discriminant is a bool, this library requires the `False` arm to be `void`.
+
+Enum-discriminated unions are represented as Rust `enum`s:
+<table>
+<tr>
+<th>XDR</th>
+<th>Rust</th>
+</tr>
+<tr>
+<td>
+
+```XDR
+enum Cases {
+    One = 1,
+    Two = 2
+};
+
+union Things switch (Cases blah) {
+case One:
+    int a;
+case Two:
+    bool b;
+default:
+    void;
+};
+```
+
+</td>
+<td>
+
+```Rust
+pub enum Cases {
+    One,
+    Two,
+}
+
+pub enum Things {
+    One(i32),
+    Two(bool),
+    Default,
+}
+```
+</td>
+</tr>
+</table>
+
+Note that when the union has a default arm, that is represented by `Default` enum variant in Rust,
+which should be distinguished from the `default()` method on the enum!
+
+The XDR spec allows for int-discriminated enums, which are effectively equivalent to enum-discriminated
+unions in terms of their encoding. The only difference is whether the arms are given meaningful names or not.
+Int-discriminated unions do not appear to be used in practice, so this library does not support them.
 
 #### Naming Conventions
 
