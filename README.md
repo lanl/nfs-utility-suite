@@ -69,9 +69,9 @@ fn main() {
 
 ### XDR Data Types
 
-#### Scalar Types
+#### Primitive Types
 
-The scalar types translate from XDR to Rust in the predictable way, e.g., `int => i32`
+The primitive types translate from XDR to Rust in the predictable way, e.g., `int => i32`
 `unsigned hyper => u64`, etc.
 
 #### Arrays
@@ -126,7 +126,8 @@ that this type of structure be implemented as a literal linked list. This might 
 it certainly is not in Rust. Therefore, this library represents optionals using a Rust Vector.
 
 The implementation requires that the self-referential structure has a container type, and that container
-type--NOT the self-referential type itself--is the one that contains the vector. For example:
+type--NOT the self-referential type itself--is the one that contains the vector. It is also required
+that the optional field be the last field of the self-referential struct. For example:
 
 <table>
 <tr>
@@ -139,7 +140,7 @@ type--NOT the self-referential type itself--is the one that contains the vector.
 ```XDR
 struct Node {
         string name<>;
-        Node *next;
+        Node *next; /* must be the last field ! */
 };
 
 struct NodeList {
