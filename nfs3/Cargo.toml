@@ -3,6 +3,10 @@ name = "nfs3"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "nfs3"
+path = "src/lib.rs"
+
 [[bin]]
 name = "mountd"
 path = "src/bin/mountd.rs"
