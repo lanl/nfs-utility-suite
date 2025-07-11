@@ -186,12 +186,26 @@ struct dirlist3 {
 #### Non-recursive optionals
 
 Although non-recursive optionals seem to be rare or non-existent in practice, they are possible. A
-non-recursive optional is simply encoded as a Rust `Option`. `struct MyOption { int *maybe; };` becomes:
+non-recursive optional is simply encoded as a Rust `Option`:
+<table><tr> <th>XDR</th> <th>Rust</th> </tr>
+<tr> <td>
+
+```XDR
+struct MyOption {
+    int *maybe;
+};
+```
+
+</td> <td>
+
 ```Rust
 pub struct MyOption {
     pub maybe: Option<i32>,
 }
 ```
+
+</td> </tr>
+</table>
 
 #### Enums
 
@@ -206,9 +220,9 @@ XDR enums are simply represented as Rust enums:
 
 ```XDR
 enum Cases {
-	one = 1,
-	two = 2,
-	three = 3
+    one = 1,
+    two = 2,
+    three = 3
 };
 ```
 
@@ -319,7 +333,7 @@ Int-discriminated unions do not appear to be used in practice, so this library d
 
 XDR normally uses snake_case for type names, while Rust uses CamelCase. This library makes no
 attempt to rename types to conform to the Rust style. I recommend using CamelCase names in the
-XDR specs that you write, so that the generatecd Rust code will be idiomatic.
+XDR specs that you write, so that the generated Rust code will be idiomatic.
 
 
 ## Protocol Definitions
