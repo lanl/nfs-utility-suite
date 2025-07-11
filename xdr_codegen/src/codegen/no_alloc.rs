@@ -35,11 +35,37 @@ impl XdrStruct {
 }
 
 impl XdrUnion {
-    pub(super) fn serialize_no_alloc(&self, buf: &mut CodeBuf, _tab: &SymbolTable) {
-        buf.code_block("pub fn serialize(&self, buf: &mut [u8]) -> usize>", |buf| {
-            buf.add_line("todo!()");
+    pub(super) fn serialize_no_alloc(&self, buf: &mut CodeBuf, tab: &SymbolTable) {
+        buf.code_block("pub fn serialize(&self, buf: &mut [u8]) -> usize", |buf| {
+            buf.add_line("let mut offset = 0;");
+            match &self.body {
+                XdrUnionBody::Bool(b) => b.serialize_no_alloc(buf, tab),
+                XdrUnionBody::Enum(b) => b.serialize_no_alloc(buf, tab),
+            };
+            buf.add_line("offset");
         });
     }
+}
+
+impl XdrUnionBoolBody {
+    fn serialize_no_alloc(&self, buf: &mut CodeBuf, tab: &SymbolTable) {
+        buf.code_block("match &self.inner", |buf| {
+            buf.code_block("Some(val) => ", |buf| {
+                buf.serialize_int(1);
+                match &self.true_arm {
+                    Declaration::Void => {
+                        buf.add_line("// void");
+                    }
+                    Declaration::Named(n) => n.serialize_no_alloc_inline(Some("val"), buf, tab),
+                };
+            });
+            buf.code_block("None => ", |buf| buf.serialize_int(0));
+        });
+    }
+}
+
+impl XdrUnionEnumBody {
+    fn serialize_no_alloc(&self, buf: &mut CodeBuf, tab: &SymbolTable) {}
 }
 
 impl XdrEnum {
@@ -167,22 +193,18 @@ impl XdrType {
     fn serialize_optional_no_alloc_inline(&self, name: &str, buf: &mut CodeBuf, tab: &SymbolTable) {
         if self.self_referential_optional(tab) {
             buf.code_block(&format!("for item in {name}.iter()"), |buf| {
-                buf.add_line("buf[offset..offset + 4].copy_from_slice(&1_i32.to_be_bytes());");
-                buf.add_line("offset += 4;");
+                buf.serialize_int(1);
                 self.serialize_no_alloc_inline("item", buf, tab);
             });
-            buf.add_line("buf[offset..offset + 4].copy_from_slice(&0_i32.to_be_bytes());");
-            buf.add_line("offset += 4;");
+            buf.serialize_int(0);
         } else {
             buf.block_statement(&format!("match &{name}"), |buf| {
                 buf.code_block("Some(inner) => ", |buf| {
-                    buf.add_line("buf[offset..offset + 4].copy_from_slice(&1_i32.to_be_bytes());");
-                    buf.add_line("offset += 4;");
+                    buf.serialize_int(1);
                     self.serialize_no_alloc_inline("inner", buf, tab);
                 });
                 buf.code_block("None => ", |buf| {
-                    buf.add_line("buf[offset..offset + 4].copy_from_slice(&0_i32.to_be_bytes());");
-                    buf.add_line("offset += 4;");
+                    buf.serialize_int(0);
                 });
             });
         }
@@ -205,5 +227,15 @@ impl XdrType {
             XdrType::Bool => 4,
             XdrType::Name(n) => panic!("Name {n}: Getting the width of a named type isn't supported. Resolve the type name first."),
         }
+    }
+}
+
+impl CodeBuf {
+    /// Write into `self` the code to serialize a signed integer `val`.
+    fn serialize_int(&mut self, val: i32) {
+        self.add_line(&format!(
+            "buf[offset..offset + 4].copy_from_slice(&{val}_i32.to_be_bytes());"
+        ));
+        self.add_line("offset += 4;");
     }
 }

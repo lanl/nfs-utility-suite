@@ -98,7 +98,7 @@ impl XdrUnion {
 }
 
 impl XdrUnionBoolBody {
-    pub(super) fn serialize_bool(&self, buf: &mut CodeBuf, tab: &SymbolTable) {
+    fn serialize_bool(&self, buf: &mut CodeBuf, tab: &SymbolTable) {
         buf.code_block("match &self.inner", |buf| {
             buf.code_block("Some(val) => ", |buf| {
                 buf.add_line("let mut buf = 1_u32.to_be_bytes().to_vec();");
@@ -118,7 +118,7 @@ impl XdrUnionBoolBody {
 }
 
 impl XdrUnionEnumBody {
-    pub(super) fn serialize_enum(&self, buf: &mut CodeBuf, tab: &SymbolTable) {
+    fn serialize_enum(&self, buf: &mut CodeBuf, tab: &SymbolTable) {
         let mut max_disc = 0; // Used to determine the discriminant for a default
                               // arm, when present.
         buf.add_line("let mut buf = Vec::new();");

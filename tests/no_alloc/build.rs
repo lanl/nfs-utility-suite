@@ -3,6 +3,7 @@ fn main() {
         .file("input/structs.x")
         .file("input/arrays.x")
         .file("input/optional.x")
+        .file("input/unions.x")
         .enable_no_alloc()
         .run()
         .expect("That should have worked. :(");

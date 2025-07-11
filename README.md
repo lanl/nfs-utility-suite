@@ -193,6 +193,43 @@ pub struct Option {
 }
 ```
 
+### Unions
+
+XDR unions come in multiple flavors depending on the type of the discriminant. Bool-discriminated
+unions are the simplest, represented in Rust as `Option`s:
+
+<table>
+<tr>
+<th>XDR</th>
+<th>Rust</th>
+</tr>
+<tr>
+<td>
+
+```XDR
+union MyOption switch (bool yes) {
+case TRUE:
+    int data;
+case FALSE:
+    void;
+};
+```
+
+</td>
+<td>
+
+```Rust
+pub struct MyOption {
+    pub inner: Option<i32>,
+}
+```
+
+</td>
+</tr>
+</table>
+
+When the discriminant is a bool, this library requires the `False` arm to be `void`.
+
 #### Naming Conventions
 
 XDR normally uses snake_case for type names, while Rust uses CamelCase. This library makes no
