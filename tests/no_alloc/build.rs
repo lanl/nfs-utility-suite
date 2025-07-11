@@ -4,6 +4,7 @@ fn main() {
         .file("input/arrays.x")
         .file("input/optional.x")
         .file("input/unions.x")
+        .file("input/enums.x")
         .enable_no_alloc()
         .run()
         .expect("That should have worked. :(");

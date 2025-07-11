@@ -193,7 +193,42 @@ pub struct Option {
 }
 ```
 
-### Unions
+#### Enums
+
+XDR enums are simply represented as Rust enums:
+<table>
+<tr>
+<th>XDR</th>
+<th>Rust</th>
+</tr>
+<tr>
+<td>
+
+```XDR
+enum Cases {
+	one = 1,
+	two = 2,
+	three = 3
+};
+```
+
+</td>
+<td>
+
+```Rust
+pub enum Cases {
+    one,
+    two,
+    three,
+}
+```
+
+</td>
+</tr>
+</table>
+
+
+#### Unions
 
 XDR unions come in multiple flavors depending on the type of the discriminant. Bool-discriminated
 unions are the simplest, represented in Rust as `Option`s:
@@ -234,7 +269,7 @@ When the discriminant is a bool, this library requires the `False` arm to be `vo
 
 XDR normally uses snake_case for type names, while Rust uses CamelCase. This library makes no
 attempt to rename types to conform to the Rust style. I recommend using CamelCase names in the
-XDR specs that you write, to that the generatecd Rust code will be idiomatic.
+XDR specs that you write, so that the generatecd Rust code will be idiomatic.
 
 
 ## Protocol Definitions

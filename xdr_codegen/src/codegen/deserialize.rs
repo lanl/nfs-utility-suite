@@ -153,9 +153,7 @@ impl XdrUnionEnumBody {
                     }
                 };
             } else {
-                buf.add_line(
-                    "_ => panic!(\"invalid discriminant value in union without default case\")",
-                );
+                buf.add_line("_ => return Err(helpers::DeserializeError),");
             }
         });
     }
@@ -192,7 +190,7 @@ impl XdrEnum {
                         let val = variant.1.as_const(tab);
                         buf.add_line(&format!("{} => {}::{},", val, self.name, variant.0));
                     }
-                    buf.add_line("_ => panic!(\"invalid enum value: {}\", val)");
+                    buf.add_line("_ => return Err(helpers::DeserializeError),");
                 });
                 buf.add_line("Ok(())");
             },

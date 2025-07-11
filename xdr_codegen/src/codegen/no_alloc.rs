@@ -69,9 +69,18 @@ impl XdrUnionEnumBody {
 }
 
 impl XdrEnum {
-    pub(super) fn serialize_no_alloc(&self, buf: &mut CodeBuf, _tab: &SymbolTable) {
+    pub(super) fn serialize_no_alloc(&self, buf: &mut CodeBuf, tab: &SymbolTable) {
         buf.code_block("pub fn serialize(&self, buf: &mut [u8]) -> usize", |buf| {
-            buf.add_line("todo!()");
+            buf.add_line("let mut offset = 0;");
+            buf.block_statement("let val: i32 = match self", |buf| {
+                for variant in self.variants.iter() {
+                    let val = variant.1.as_const(tab);
+                    buf.add_line(&format!("{}::{} => {},", self.name, variant.0, val));
+                }
+            });
+            buf.add_line("buf[offset..offset + 4].copy_from_slice(&val.to_be_bytes());");
+            buf.add_line("offset += 4;");
+            buf.add_line("offset");
         });
     }
 }
