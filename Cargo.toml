@@ -2,8 +2,9 @@
 resolver = "1"
 
 members = [
+    "nfs3",
+    "rpc_protocol",
     "tests/alloc",
     "tests/no_alloc",
     "xdr_codegen",
-    "rpc_protocol",
 ]

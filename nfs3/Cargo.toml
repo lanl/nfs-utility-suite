@@ -1,0 +1,19 @@
+[package]
+name = "nfs3"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "mountd"
+path = "src/bin/mountd.rs"
+
+[[bin]]
+name = "showmount"
+path = "src/bin/showmount.rs"
+
+[dependencies]
+clap = { version = "4.5.31", features = ["derive"] }
+rpc_protocol = { path = "../rpc_protocol" }
+
+[build-dependencies]
+xdr_codegen = { path = "../xdr_codegen" }
