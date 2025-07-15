@@ -3,12 +3,12 @@
 
 #![allow(non_camel_case_types)]
 
-use rpc_protocol::rpcbind_server;
+use rpc_protocol::rpcbind;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
 
-    rpcbind_server::main();
+    rpcbind::server::main();
 
     Ok(())
 }
