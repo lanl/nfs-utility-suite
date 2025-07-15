@@ -45,8 +45,8 @@ pub fn do_rpc_call(
     read_reply_from_stream(xid, stream)
 }
 
-fn read_reply_from_stream(xid: u32, mut stream: &mut TcpStream) -> Result<Vec<u8>, crate::Error> {
-    let message_length = decode_record_mark(&mut stream)?;
+fn read_reply_from_stream(xid: u32, stream: &mut TcpStream) -> Result<Vec<u8>, crate::Error> {
+    let message_length = decode_record_mark(stream)?;
 
     let mut buf = vec![0; message_length as usize];
     if let Err(e) = stream.read_exact(&mut buf) {
@@ -55,7 +55,7 @@ fn read_reply_from_stream(xid: u32, mut stream: &mut TcpStream) -> Result<Vec<u8
 
     let mut message = RpcMessage::default();
     let mut rest = buf.as_slice();
-    if let Err(_) = RpcMessage::deserialize(&mut message, &mut rest) {
+    if RpcMessage::deserialize(&mut message, &mut rest).is_err() {
         return Err(Error::Protocol(ProtocolError::Decode));
     }
 
