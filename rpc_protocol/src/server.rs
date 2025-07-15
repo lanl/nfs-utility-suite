@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright 2025. Triad National Security, LLC.
 
+use log::*;
+
 use crate::*;
 
 /// An RPC Procedure implementation takes a reference to the call body for the request (mainly
@@ -79,11 +81,12 @@ impl<T> RpcService<T> {
     fn handle_connection(&mut self, mut stream: std::net::TcpStream) -> Result<(), crate::Error> {
         loop {
             let message_length = decode_record_mark(&mut stream)?;
+            trace!("got message with record mark: {message_length}");
 
             let mut buf = vec![0; message_length as usize];
             stream
                 .read_exact(&mut buf)
-                .inspect_err(|e| eprintln!("Error reading message from stream: {e}"))?;
+                .inspect_err(|e| warn!("Error reading message from stream: {e}"))?;
 
             let mut message = RpcMessage::default();
             let mut rest = buf.as_slice();
@@ -110,6 +113,11 @@ impl<T> RpcService<T> {
                 // This could reply with an "AuthError" reply instead...
                 _ => return Err(Error::Protocol(ProtocolError::UnsupportedAuth)),
             };
+
+            debug!(
+                "recieved CALL for program {}, version {}, procedure {}",
+                call.prog, call.vers, call.proc
+            );
 
             if call.prog != self.program {
                 // should reply PROG_UNAVAIL

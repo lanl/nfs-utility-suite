@@ -6,6 +6,8 @@
 use rpc_protocol::rpcbind_server;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    env_logger::init();
+
     rpcbind_server::main();
 
     Ok(())
