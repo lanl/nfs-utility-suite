@@ -21,10 +21,12 @@ struct RpcbindList {
 
 program RPCBPROG {
  version RPCBVERS {
-     RpcbString
-     RPCBPROC_GETADDR(RpcService) = 3;
+     bool RPCBPROC_SET(RpcService) = 1;
 
-     RpcbindList
-     RPCBPROC_DUMP(void) = 4;
+     bool RPCBPROC_UNSET(RpcService) = 2;
+
+     RpcbString RPCBPROC_GETADDR(RpcService) = 3;
+
+     RpcbindList RPCBPROC_DUMP(void) = 4;
  } = 3;
 } = 100000;
