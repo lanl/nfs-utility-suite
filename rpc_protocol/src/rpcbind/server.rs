@@ -9,9 +9,8 @@ use std::net::TcpListener;
 use crate::server::*;
 use crate::*;
 
-include!(concat!(env!("OUT_DIR"), "/rpcbind.rs"));
-
-use rpcbind::procedures::*;
+use super::rpcbind;
+use super::rpcbind::procedures::*;
 
 pub fn main() {
     let service_list = default_service_list();

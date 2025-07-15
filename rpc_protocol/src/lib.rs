@@ -2,7 +2,7 @@
 // Copyright 2025. Triad National Security, LLC.
 
 pub mod client;
-pub mod rpcbind_server;
+pub mod rpcbind;
 pub mod server;
 
 use std::fmt;
