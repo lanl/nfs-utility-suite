@@ -11,8 +11,8 @@ use crate::*;
 ///
 /// This blocks the calling thread until the procedure returns a result. It returns either that
 /// result as a byte vector (which the caller can decode), or an error.
-pub fn do_rpc_call(
-    stream: &mut TcpStream,
+pub fn do_rpc_call<S: Read + Write>(
+    stream: &mut S,
     prog: u32,
     vers: u32,
     proc: u32,
@@ -45,7 +45,10 @@ pub fn do_rpc_call(
     read_reply_from_stream(xid, stream)
 }
 
-fn read_reply_from_stream(xid: u32, stream: &mut TcpStream) -> Result<Vec<u8>, crate::Error> {
+fn read_reply_from_stream<S: Read + Write>(
+    xid: u32,
+    stream: &mut S,
+) -> Result<Vec<u8>, crate::Error> {
     let message_length = decode_record_mark(stream)?;
 
     let mut buf = vec![0; message_length as usize];
