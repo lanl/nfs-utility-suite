@@ -7,7 +7,6 @@ pub mod server;
 
 use std::fmt;
 use std::io::{Read, Write};
-use std::net::TcpStream;
 
 include!(concat!(env!("OUT_DIR"), "/rpc_prot.rs"));
 
