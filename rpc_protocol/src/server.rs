@@ -132,23 +132,33 @@ impl<T> RpcService<T> {
             };
 
             debug!(
-                "recieved CALL for program {}, version {}, procedure {}",
-                call.prog, call.vers, call.proc
+                "recieved CALL for program {}, version {}, procedure {}, argument length {} bytes",
+                call.prog,
+                call.vers,
+                call.proc,
+                rest.len(),
             );
 
             if call.prog != self.program {
-                // should reply PROG_UNAVAIL
-                todo!();
+                debug!("CALL for unknown program {}", call.prog);
+                let reply = AcceptedReplyBody::ProgUnavail;
+                return send_accepted_reply(&mut stream, message.xid, reply, None);
             }
 
             if call.vers != self.version {
-                // should reply PROG_MISMATCH
-                todo!();
+                debug!("CALL for unknown version {}", call.vers);
+                let reply = AcceptedReplyBody::ProgMismatch(ProgMismatchBody {
+                    low: self.version,
+                    high: self.version,
+                });
+                trace!("replying with {reply:?}");
+                return send_accepted_reply(&mut stream, message.xid, reply, None);
             }
 
             if call.proc as usize > self.procedures.len() - 1 {
-                // should reply PROC_UNAVAIL
-                todo!();
+                debug!("CALL for unknown procedure {}", call.proc);
+                let reply = AcceptedReplyBody::ProcUnavail;
+                return send_accepted_reply(&mut stream, message.xid, reply, None);
             }
 
             if call.proc == 0 {
@@ -194,7 +204,7 @@ fn send_accepted_reply<S: Read + Write>(
     xid: u32,
     reply_data: AcceptedReplyBody,
     arg: Option<&[u8]>,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), crate::Error> {
     let body = RpcMessageBody::Reply(ReplyBody::Accepted(AcceptedReply {
         verf: OpaqueAuth::none(),
         reply_data,

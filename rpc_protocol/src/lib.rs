@@ -11,8 +11,8 @@ use std::io::{Read, Write};
 include!(concat!(env!("OUT_DIR"), "/rpc_prot.rs"));
 
 pub use rpc_prot::{
-    AcceptedReply, AcceptedReplyBody, AuthFlavor, CallBody, OpaqueAuth, ReplyBody, RpcMessage,
-    RpcMessageBody,
+    AcceptedReply, AcceptedReplyBody, AuthFlavor, CallBody, OpaqueAuth, ProgMismatchBody,
+    ReplyBody, RpcMessage, RpcMessageBody,
 };
 
 /// Only supported version of the RPC Protocol
