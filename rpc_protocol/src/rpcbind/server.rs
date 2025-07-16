@@ -17,8 +17,8 @@ pub fn main(addr: RpcbindServerAddress) {
     let service_list = default_service_list();
 
     let procedures: Vec<Option<RpcProcedure<rpcbind::RpcbindList>>> =
-        vec![None, Some(set), Some(unset), Some(getaddr), Some(dump)];
-    let mut server = RpcService::new(RPCBPROG, RPCBVERS::VERSION, procedures, service_list);
+        vec![None, Some(set), None, Some(getaddr), Some(dump)];
+    let mut server = RpcService::new(RPCBPROG, RPCBVERS::VERSION, 4, procedures, service_list);
 
     match addr {
         RpcbindServerAddress::Tcp(addr) => {
@@ -49,6 +49,7 @@ fn getaddr(_call: &CallBody, mut arg: &[u8], service_list: &mut rpcbind::Rpcbind
             contents: service.addr.clone(),
         };
 
+        debug!("GETADDR response: {:?}", service.addr);
         return RpcResult::Success(rpcbind::RpcbString::serialize_alloc(&address));
     }
 
@@ -67,6 +68,8 @@ fn set(_call: &CallBody, arg: &[u8], service_list: &mut rpcbind::RpcbindList) ->
         return RpcResult::GarbageArgs;
     }
 
+    debug!("SET call: {new_service:?}");
+
     // Make sure that this service is not already registered:
     if get_service(new_service.prog, new_service.vers, service_list).is_some() {
         // If it is, return False to the caller:
@@ -83,11 +86,6 @@ fn set(_call: &CallBody, arg: &[u8], service_list: &mut rpcbind::RpcbindList) ->
     });
 
     RpcResult::Success(vec![0, 0, 0, 1])
-}
-
-/// Implementation of the unset RPC. This removes a service from the list.
-fn unset(_call: &CallBody, _arg: &[u8], _service_list: &mut rpcbind::RpcbindList) -> RpcResult {
-    todo!()
 }
 
 /// Implementation of the dump RPC. This returns the entire known `service_list`.

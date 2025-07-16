@@ -26,18 +26,21 @@ pub enum RpcResult {
 /// An RPC Service is defined by its program and version numbers, and a map from procedure numbers
 /// to the actual procedures which implement them. The private state is shared by each procedure
 /// implementation in the service.
-///
-/// TODO: allow multiple prog/vers/procedure sets to coexist in one RpcService (sharing a single
-/// state).
 pub struct RpcService<T> {
     /// The program number of this RPC service.
     program: u32,
 
-    /// The version number of this RPC service.
-    version: u32,
+    /// The min version number of this RPC service.
+    version_min: u32,
+
+    /// The max version number of this RPC service.
+    version_max: u32,
 
     /// The mapping of procedure numbers to functions that implement the procedures.
     /// The 0th element of this array is ignored because it is always mapped to the NULL procedure.
+    /// This structure assumes that al the versions between version_min and version_max share the
+    /// same procedures. If that assumption should turn false in the future, this structure will
+    /// have to be modified.
     procedures: Vec<Option<RpcProcedure<T>>>,
 
     /// The RPC service implementation can use this field to store state that must be maintained
@@ -65,13 +68,15 @@ impl Listener<std::os::unix::net::UnixStream> for std::os::unix::net::UnixListen
 impl<T> RpcService<T> {
     pub fn new(
         program: u32,
-        version: u32,
+        version_min: u32,
+        version_max: u32,
         procedures: Vec<Option<RpcProcedure<T>>>,
         private_state: T,
     ) -> Self {
         Self {
             program,
-            version,
+            version_min,
+            version_max,
             procedures,
             private_state,
         }
@@ -145,11 +150,11 @@ impl<T> RpcService<T> {
                 return send_accepted_reply(&mut stream, message.xid, reply, None);
             }
 
-            if call.vers != self.version {
+            if call.vers < self.version_min || call.vers > self.version_max {
                 debug!("CALL for unknown version {}", call.vers);
                 let reply = AcceptedReplyBody::ProgMismatch(ProgMismatchBody {
-                    low: self.version,
-                    high: self.version,
+                    low: self.version_min,
+                    high: self.version_max,
                 });
                 trace!("replying with {reply:?}");
                 return send_accepted_reply(&mut stream, message.xid, reply, None);

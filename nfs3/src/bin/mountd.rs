@@ -43,7 +43,13 @@ fn main() {
 
     let handle = std::thread::spawn(|| {
         let state = MountState::new();
-        let mut server = RpcService::new(MOUNT_PROGRAM, MOUNT_V3::VERSION, procedures, state);
+        let mut server = RpcService::new(
+            MOUNT_PROGRAM,
+            MOUNT_V3::VERSION,
+            MOUNT_V3::VERSION,
+            procedures,
+            state,
+        );
 
         let listener = TcpListener::bind("0.0.0.0:20048").unwrap();
         server.run_blocking_tcp_server(listener);
