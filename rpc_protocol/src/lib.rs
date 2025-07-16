@@ -77,7 +77,7 @@ impl fmt::Display for ProtocolError {
 
 /// Given a buffer that contains an encoded message, prefaced by a dummy record mark, update that
 /// record mark based on the actual length of the message.
-fn update_record_mark(buf: &mut Vec<u8>) {
+fn update_record_mark(buf: &mut [u8]) {
     // size of message, not including the 4 bytes for the record mark itself:
     let message_size = u32::try_from(buf.len() - 4).unwrap();
     let record_mark: u32 = message_size | (1 << 31);
