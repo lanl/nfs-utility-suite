@@ -91,7 +91,7 @@ fn update_record_mark(buf: &mut Vec<u8>) {
 /// implementation does not yet support record fragments.
 ///
 /// Otherwise, returns the length of the message.
-fn decode_record_mark(stream: &mut std::net::TcpStream) -> Result<u32, crate::Error> {
+fn decode_record_mark<S: Read + Write>(stream: &mut S) -> Result<u32, crate::Error> {
     let mut record_mark_bytes: [u8; 4] = [0; 4];
 
     stream.read_exact(&mut record_mark_bytes).inspect_err(|e| {
