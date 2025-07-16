@@ -8,15 +8,8 @@ use std::net::TcpStream;
 use std::os::unix::net::UnixStream;
 
 use crate::client::*;
-
-use super::rpcbind;
-use super::rpcbind::procedures::*;
-
-/// An RPCBIND Server tends to listen both on a Unix socket and a TCP socket.
-pub enum RpcbindServerAddress {
-    Unix(String),
-    Tcp(String),
-}
+use crate::rpcbind::{self, procedures::*, RpcbindServerAddress};
+use crate::*;
 
 /// Try to call the SET RPC for the RPCBIND server listening at `address`, to add `new_service` to
 /// its service list.
@@ -28,24 +21,24 @@ pub fn set(
 
     match server_address {
         RpcbindServerAddress::Unix(addr) => {
-            let stream = UnixStream::connect(addr)?;
-            set_using_stream(new_service, stream)
+            let mut stream = UnixStream::connect(addr)?;
+            set_using_stream(new_service, &mut stream)
         }
         RpcbindServerAddress::Tcp(addr) => {
-            let stream = TcpStream::connect(addr)?;
-            set_using_stream(new_service, stream)
+            let mut stream = TcpStream::connect(addr)?;
+            set_using_stream(new_service, &mut stream)
         }
     }
 }
 
-fn set_using_stream<S: Read + Write>(
+pub fn set_using_stream<S: Read + Write>(
     new_service: rpcbind::RpcService,
-    mut stream: S,
+    stream: &mut S,
 ) -> Result<bool, crate::Error> {
     let arg = new_service.serialize_alloc();
 
     let res = do_rpc_call(
-        &mut stream,
+        stream,
         RPCBPROG,
         RPCBVERS::VERSION,
         RPCBVERS::RPCBPROC_SET,
@@ -55,5 +48,26 @@ fn set_using_stream<S: Read + Write>(
     match res.as_slice() {
         &[0, 0, 0, 0] => Ok(false),
         _ => Ok(true),
+    }
+}
+
+pub fn getaddr_using_stream<S: Read + Write>(
+    service: rpcbind::RpcService,
+    stream: &mut S,
+) -> Result<std::ffi::OsString, crate::Error> {
+    let arg = service.serialize_alloc();
+
+    let res = do_rpc_call(
+        stream,
+        RPCBPROG,
+        RPCBVERS::VERSION,
+        RPCBVERS::RPCBPROC_GETADDR,
+        arg.as_slice(),
+    )?;
+
+    let mut addr = rpcbind::RpcbString::default();
+    match addr.deserialize(&mut res.as_slice()) {
+        Ok(_) => Ok(addr.contents),
+        Err(_) => Err(Error::Protocol(ProtocolError::Decode)),
     }
 }

@@ -45,6 +45,23 @@ pub struct RpcService<T> {
     private_state: T,
 }
 
+/// A trait that allows functions to be generic over both TcpListener and UnixListener.
+pub trait Listener<S> {
+    fn accept(&self) -> std::io::Result<S>;
+}
+
+impl Listener<std::net::TcpStream> for std::net::TcpListener {
+    fn accept(&self) -> std::io::Result<std::net::TcpStream> {
+        Ok(self.accept()?.0)
+    }
+}
+
+impl Listener<std::os::unix::net::UnixStream> for std::os::unix::net::UnixListener {
+    fn accept(&self) -> std::io::Result<std::os::unix::net::UnixStream> {
+        Ok(self.accept()?.0)
+    }
+}
+
 impl<T> RpcService<T> {
     pub fn new(
         program: u32,
@@ -60,14 +77,14 @@ impl<T> RpcService<T> {
         }
     }
 
-    /// Run a blocking TCP server for this RPC service using the given TcpListener.
-    pub fn run_blocking_tcp_server(&mut self, listener: std::net::TcpListener) {
-        for stream in listener.incoming() {
-            match stream {
+    /// Run a blocking TCP server for this RPC service using the given Listener.
+    pub fn run_blocking_tcp_server<S: Read + Write>(&mut self, listener: impl Listener<S>) {
+        loop {
+            match listener.accept() {
                 Ok(stream) => {
                     let _ = self.handle_connection(stream);
                 }
-                Err(e) => eprintln!("Error accepting connection: {e}"),
+                Err(e) => warn!("Error accepting connection: {e}"),
             }
         }
     }
@@ -78,7 +95,7 @@ impl<T> RpcService<T> {
     ///
     /// TODO: this function can be enhanced to send the appropriate kind of reply message to
     /// respond to some error conditions, rather than dropping the connection.
-    fn handle_connection(&mut self, mut stream: std::net::TcpStream) -> Result<(), crate::Error> {
+    fn handle_connection<S: Read + Write>(&mut self, mut stream: S) -> Result<(), crate::Error> {
         loop {
             let message_length = decode_record_mark(&mut stream)?;
             trace!("got message with record mark: {message_length}");
@@ -172,8 +189,8 @@ impl<T> RpcService<T> {
 ///
 /// TODO: currently hard-coded to use auth "None"--this will have to be updated to use the
 /// correct kind of auth based on the call.
-fn send_accepted_reply(
-    stream: &mut TcpStream,
+fn send_accepted_reply<S: Read + Write>(
+    stream: &mut S,
     xid: u32,
     reply_data: AcceptedReplyBody,
     arg: Option<&[u8]>,

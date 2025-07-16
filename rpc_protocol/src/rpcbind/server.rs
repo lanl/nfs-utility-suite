@@ -7,22 +7,33 @@ use log::*;
 
 use std::ffi::OsString;
 use std::net::TcpListener;
+use std::os::unix::net::UnixListener;
 
+use crate::rpcbind::{self, procedures::*, RpcbindServerAddress};
 use crate::server::*;
 use crate::*;
 
-use super::rpcbind;
-use super::rpcbind::procedures::*;
-
-pub fn main() {
+pub fn main(addr: RpcbindServerAddress) {
     let service_list = default_service_list();
 
     let procedures: Vec<Option<RpcProcedure<rpcbind::RpcbindList>>> =
         vec![None, Some(set), Some(unset), Some(getaddr), Some(dump)];
     let mut server = RpcService::new(RPCBPROG, RPCBVERS::VERSION, procedures, service_list);
 
-    let listener = TcpListener::bind("0.0.0.0:111").unwrap();
-    server.run_blocking_tcp_server(listener);
+    match addr {
+        RpcbindServerAddress::Tcp(addr) => {
+            let listener = TcpListener::bind(addr).unwrap();
+            server.run_blocking_tcp_server(listener);
+        }
+        RpcbindServerAddress::Unix(addr) => {
+            // Not necessary to check for errors in remove_file() because ENOENT is expected, and
+            // a failure to remove the file (while it already exists) will result in an error in
+            // bind().
+            let _ = std::fs::remove_file(&addr);
+            let listener = UnixListener::bind(addr).unwrap();
+            server.run_blocking_tcp_server(listener);
+        }
+    }
 }
 
 /// Implementation of the getaddr RPC. This loops over the `service_list` to see if the service
@@ -75,7 +86,7 @@ fn set(_call: &CallBody, arg: &[u8], service_list: &mut rpcbind::RpcbindList) ->
 }
 
 /// Implementation of the unset RPC. This removes a service from the list.
-fn unset(_call: &CallBody, _arg: &[u8], service_list: &mut rpcbind::RpcbindList) -> RpcResult {
+fn unset(_call: &CallBody, _arg: &[u8], _service_list: &mut rpcbind::RpcbindList) -> RpcResult {
     todo!()
 }
 
