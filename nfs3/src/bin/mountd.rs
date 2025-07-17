@@ -32,6 +32,8 @@ impl MountState {
 }
 
 fn main() {
+    env_logger::init();
+
     let procedures: Vec<Option<RpcProcedure<MountState>>> = vec![
         None,
         None, // mount

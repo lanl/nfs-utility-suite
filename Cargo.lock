@@ -183,6 +183,7 @@ name = "nfs3"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "env_logger",
  "rpc_protocol",
  "xdr_codegen",
 ]
