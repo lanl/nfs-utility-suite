@@ -11,8 +11,8 @@ use std::io::{Read, Write};
 include!(concat!(env!("OUT_DIR"), "/rpc_prot.rs"));
 
 pub use rpc_prot::{
-    AcceptedReply, AcceptedReplyBody, AuthFlavor, CallBody, OpaqueAuth, ProgMismatchBody,
-    ReplyBody, RpcMessage, RpcMessageBody,
+    AcceptedReply, AcceptedReplyBody, AuthFlavor, AuthStat, CallBody, OpaqueAuth, ProgMismatchBody,
+    RejectedReply, ReplyBody, RpcMessage, RpcMessageBody,
 };
 
 /// Only supported version of the RPC Protocol
@@ -32,7 +32,7 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::Protocol(e) => write!(f, "Protocol error: {e}"),
-            Self::Rpc(e) => write!(f, "RPC error: {:?}", e),
+            Self::Rpc(e) => write!(f, "RPC error: {e:?}"),
             Self::Io(e) => write!(f, "IO error: {e}"),
         }
     }

@@ -11,6 +11,11 @@ use crate::*;
 /// contains the encoded response, or unsuccesful.
 pub type RpcProcedure<T> = fn(&CallBody, &[u8], &mut T) -> RpcResult;
 
+/// The NULL Procedure is defined for every service and does nothing, succesfully.
+fn null_procedure<T>(_call: &CallBody, _arg: &[u8], _state: &mut T) -> RpcResult {
+    RpcResult::Success(vec![])
+}
+
 /// An RPC procedure implementation is permitted to return these results.
 pub enum RpcResult {
     /// A succesful result includes the encoded value of the reply.
@@ -112,28 +117,14 @@ impl<T> RpcService<T> {
 
             let mut message = RpcMessage::default();
             let mut rest = buf.as_slice();
-            if let Err(e) = RpcMessage::deserialize(&mut message, &mut rest) {
-                eprintln!("Error deserializing message: {e}");
+            if let Err(e) = message.deserialize(&mut rest) {
+                warn!("Error deserializing message: {e}");
                 return Err(Error::Protocol(ProtocolError::Decode));
             }
 
             // The client better have sent a "call" message:
             let RpcMessageBody::Call(call) = message.body else {
                 return Err(Error::Protocol(ProtocolError::Decode));
-            };
-
-            // The RPC version must always be 2:
-            if call.rpcvers != RPC_VERSION {
-                // This could reply with a "RpcMismatch" reply instead...
-                return Err(Error::Protocol(ProtocolError::WrongRpcVersion));
-            }
-
-            // This implementation currently only supports auth styles "None" and "Sys":
-            match call.cred.flavor {
-                AuthFlavor::None => {}
-                AuthFlavor::Sys => {}
-                // This could reply with an "AuthError" reply instead...
-                _ => return Err(Error::Protocol(ProtocolError::UnsupportedAuth)),
             };
 
             debug!(
@@ -144,56 +135,114 @@ impl<T> RpcService<T> {
                 rest.len(),
             );
 
-            if call.prog != self.program {
-                debug!("CALL for unknown program {}", call.prog);
-                let reply = AcceptedReplyBody::ProgUnavail;
-                return send_accepted_reply(&mut stream, message.xid, reply, None);
-            }
+            let procedure = match self.validate_call(&call) {
+                Ok(proc) => proc,
+                Err(e) => {
+                    if let Error::Rpc(reply) = e {
+                        send_reply_no_arg(&mut stream, message.xid, reply)?;
+                    }
 
-            if call.vers < self.version_min || call.vers > self.version_max {
-                debug!("CALL for unknown version {}", call.vers);
-                let reply = AcceptedReplyBody::ProgMismatch(ProgMismatchBody {
-                    low: self.version_min,
-                    high: self.version_max,
-                });
-                trace!("replying with {reply:?}");
-                return send_accepted_reply(&mut stream, message.xid, reply, None);
-            }
-
-            if call.proc as usize > self.procedures.len() - 1 {
-                debug!("CALL for unknown procedure {}", call.proc);
-                let reply = AcceptedReplyBody::ProcUnavail;
-                return send_accepted_reply(&mut stream, message.xid, reply, None);
-            }
-
-            if call.proc == 0 {
-                self.null_procedure();
-            }
-
-            // Get the appropriate implementation from the procedures array, or if there is no
-            // procedure for the requested proc number, then TODO: return an error:
-            let Some(procedure) = self.procedures[call.proc as usize] else {
-                // should return PROC_UNAVAIL
-                todo!();
+                    return Ok(());
+                }
             };
 
             let res = procedure(&call, rest, &mut self.private_state);
 
             let _ = match res {
-                RpcResult::Success(data) => send_accepted_reply(
-                    &mut stream,
-                    message.xid,
-                    AcceptedReplyBody::Success([0u8; 0]),
-                    Some(&data),
-                ),
+                RpcResult::Success(data) => {
+                    send_succesful_reply(&mut stream, message.xid, Some(&data))
+                }
                 // can reply with either GARBAGE_ARGS, SYSTEM_ERR, or SUCCESS
                 _ => todo!(),
             };
         }
     }
 
-    fn null_procedure(&self) {
-        todo!();
+    /// Given an RPC call, checks if it is a valid call for this service. If so returns the
+    /// procedure which implements that call.
+    ///
+    /// Otherwise, returns the approrpiate kind of error.
+    fn validate_call(&self, call: &CallBody) -> Result<RpcProcedure<T>, Error> {
+        // The RPC version must always be 2:
+        if call.rpcvers != RPC_VERSION {
+            warn!("CALL with unexpected RPC version {}", call.rpcvers);
+            // This could reply with a "RpcMismatch" reply instead...
+            return Err(Error::Protocol(ProtocolError::WrongRpcVersion));
+        }
+
+        // This implementation currently only supports auth styles "None" and "Sys":
+        match call.cred.flavor {
+            AuthFlavor::None => {}
+            AuthFlavor::Sys => {}
+            _ => {
+                debug!("CALL with unsupported auth: {:?}", call.cred);
+                let reply = ReplyBody::Denied(RejectedReply::AuthError(AuthStat::RejectedCred));
+                return Err(crate::Error::Rpc(reply));
+            }
+        };
+
+        if call.prog != self.program {
+            debug!("CALL for unknown program {}", call.prog);
+            let reply = ReplyBody::accepted_reply(AcceptedReplyBody::ProgUnavail);
+            return Err(crate::Error::Rpc(reply));
+        }
+
+        if call.vers < self.version_min || call.vers > self.version_max {
+            debug!("CALL for unknown version {}", call.vers);
+            let reply =
+                ReplyBody::accepted_reply(AcceptedReplyBody::ProgMismatch(ProgMismatchBody {
+                    low: self.version_min,
+                    high: self.version_max,
+                }));
+            return Err(crate::Error::Rpc(reply));
+        }
+
+        if call.proc == 0 {
+            return Ok(null_procedure);
+        }
+
+        if call.proc as usize > self.procedures.len() - 1 {
+            debug!("CALL for unknown procedure {}", call.proc);
+            let reply = ReplyBody::accepted_reply(AcceptedReplyBody::ProcUnavail);
+            return Err(crate::Error::Rpc(reply));
+        }
+
+        let Some(procedure) = self.procedures[call.proc as usize] else {
+            debug!("CALL for unimplemented procedure {}", call.proc);
+            let reply = ReplyBody::accepted_reply(AcceptedReplyBody::ProcUnavail);
+            return Err(crate::Error::Rpc(reply));
+        };
+
+        Ok(procedure)
+    }
+}
+
+/// Write a reply to the stream without encoding any procedure result (for example, an error reply).
+fn send_reply_no_arg<S: Read + Write>(
+    stream: &mut S,
+    xid: u32,
+    reply_data: ReplyBody,
+) -> Result<(), crate::Error> {
+    let message = RpcMessage {
+        xid,
+        body: RpcMessageBody::Reply(reply_data),
+    };
+
+    let mut buf = buf_with_dummy_record_mark();
+    buf.append(&mut message.serialize_alloc());
+    crate::update_record_mark(&mut buf);
+
+    stream.write_all(&buf)?;
+
+    Ok(())
+}
+
+impl ReplyBody {
+    fn accepted_reply(reply_data: AcceptedReplyBody) -> Self {
+        ReplyBody::Accepted(AcceptedReply {
+            verf: OpaqueAuth::none(),
+            reply_data,
+        })
     }
 }
 
@@ -204,16 +253,14 @@ impl<T> RpcService<T> {
 ///
 /// TODO: currently hard-coded to use auth "None"--this will have to be updated to use the
 /// correct kind of auth based on the call.
-fn send_accepted_reply<S: Read + Write>(
+fn send_succesful_reply<S: Read + Write>(
     stream: &mut S,
     xid: u32,
-    reply_data: AcceptedReplyBody,
     arg: Option<&[u8]>,
 ) -> Result<(), crate::Error> {
-    let body = RpcMessageBody::Reply(ReplyBody::Accepted(AcceptedReply {
-        verf: OpaqueAuth::none(),
-        reply_data,
-    }));
+    let body = RpcMessageBody::Reply(ReplyBody::accepted_reply(AcceptedReplyBody::Success(
+        [0u8; 0],
+    )));
 
     let message = RpcMessage { xid, body };
 
@@ -221,14 +268,6 @@ fn send_accepted_reply<S: Read + Write>(
     buf.append(&mut message.serialize_alloc());
 
     if let Some(arg) = arg {
-        let RpcMessageBody::Reply(ReplyBody::Accepted(acc)) = message.body else {
-            panic!("Must be accepted reply if an argument is passed");
-        };
-
-        let AcceptedReplyBody::Success(_) = acc.reply_data else {
-            panic!("Must be accepted succesful reply if an argument is passed");
-        };
-
         // It is illegal to pass an argument that is not padded to a multiple of 4 bytes:
         assert_eq!(0, arg.len() % 4);
 
