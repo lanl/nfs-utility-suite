@@ -12,7 +12,7 @@ use crate::*;
 pub type RpcProcedure<T> = fn(&CallBody, &[u8], &mut T) -> RpcResult;
 
 /// The NULL Procedure is defined for every service and does nothing, succesfully.
-fn null_procedure<T>(_call: &CallBody, _arg: &[u8], _state: &mut T) -> RpcResult {
+pub fn null_procedure<T>(_call: &CallBody, _arg: &[u8], _state: &mut T) -> RpcResult {
     RpcResult::Success(vec![])
 }
 
@@ -102,10 +102,10 @@ impl<T> RpcService<T> {
     /// Tries to handle a given stream by reading a series of RPC Call messages from it, and
     /// passing those calls off to the appropriate implementation function to handle. If any errors
     /// are encountered, the function returns and the stream is dropped.
-    ///
-    /// TODO: this function can be enhanced to send the appropriate kind of reply message to
-    /// respond to some error conditions, rather than dropping the connection.
-    fn handle_connection<S: Read + Write>(&mut self, mut stream: S) -> Result<(), crate::Error> {
+    pub fn handle_connection<S: Read + Write>(
+        &mut self,
+        mut stream: S,
+    ) -> Result<(), crate::Error> {
         loop {
             let message_length = decode_record_mark(&mut stream)?;
             trace!("got message with record mark: {message_length}");
@@ -161,7 +161,7 @@ impl<T> RpcService<T> {
     /// Given an RPC call, checks if it is a valid call for this service. If so returns the
     /// procedure which implements that call.
     ///
-    /// Otherwise, returns the approrpiate kind of error.
+    /// Otherwise, returns the appropiate kind of error.
     fn validate_call(&self, call: &CallBody) -> Result<RpcProcedure<T>, Error> {
         // The RPC version must always be 2:
         if call.rpcvers != RPC_VERSION {
@@ -238,7 +238,7 @@ fn send_reply_no_arg<S: Read + Write>(
 }
 
 impl ReplyBody {
-    fn accepted_reply(reply_data: AcceptedReplyBody) -> Self {
+    pub fn accepted_reply(reply_data: AcceptedReplyBody) -> Self {
         ReplyBody::Accepted(AcceptedReply {
             verf: OpaqueAuth::none(),
             reply_data,
