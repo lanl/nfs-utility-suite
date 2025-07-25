@@ -12,7 +12,7 @@ use log::*;
 
 use crate::*;
 
-use super::{validate_program_and_version, RpcResult};
+use super::{encode_succesful_reply, validate_program_and_version, RpcResult};
 
 const GROUP_ID: u16 = 42;
 
@@ -73,10 +73,14 @@ pub struct RpcServer<T> {
     listener: TcpListener,
     buffer_map: BufferMap,
     procedure_map: ProcedureMap<T>,
+
+    /// The RPC service implementation uses this field to store state that must be maintained
+    /// across RPC calls.
+    user_state: T,
 }
 
 impl<T> RpcServer<T> {
-    pub fn new(address: &str, procedure_map: ProcedureMap<T>) -> io::Result<Self> {
+    pub fn new(address: &str, procedure_map: ProcedureMap<T>, user_state: T) -> io::Result<Self> {
         let mut ring = IoUring::new(1024)?;
         let buffer_map = BufferMap::new(&mut ring);
 
@@ -85,6 +89,7 @@ impl<T> RpcServer<T> {
             listener: TcpListener::bind(address)?,
             buffer_map,
             procedure_map,
+            user_state,
         };
 
         ring.submit_multishot_accept();
@@ -118,7 +123,9 @@ impl<T> RpcServer<T> {
                     let conn_fd = r.fd;
                     op.handle_receive(self, cqe, conn_fd);
                 }
-                Operation::Send => {}
+                Operation::Send(s) => {
+                    eprintln!("send completion (not yet handling): {s:?}, {cqe:?}");
+                }
             }
         }
     }
@@ -152,7 +159,7 @@ impl<T> RpcServer<T> {
     /// procedure implementation.
     ///
     /// Otherwise, returns an error.
-    fn handle_received_bytes(&mut self, buffer_id: u16, amount: i32) {
+    fn handle_received_bytes(&mut self, buffer_id: u16, amount: i32, conn_fd: i32) {
         assert!(amount > 0);
 
         // SAFETY: the buffer_id was just gotten from a completion.
@@ -213,7 +220,9 @@ impl<T> RpcServer<T> {
             todo!("handle this");
         };
 
-        self.call_user_procedure(buf, procedure);
+        let res = procedure(&call, buf, &mut self.user_state);
+
+        self.process_user_result(res, message.xid, conn_fd);
 
         // SAFETY: the buffer being resubmitted was just taken at the beginning of this function,
         // and has not been re-submitted before this call.
@@ -222,7 +231,37 @@ impl<T> RpcServer<T> {
         }
     }
 
-    fn call_user_procedure(&mut self, _buf: &[u8], _proc: RingProcedure<T>) {}
+    fn process_user_result(&mut self, res: RingResult, xid: u32, conn_fd: i32) {
+        match res {
+            RingResult::Done(rpc_res) => match rpc_res {
+                RpcResult::Success(data) => self.send_succesful_reply(xid, conn_fd, data),
+                _ => todo!(),
+            },
+            RingResult::MoreIo(_) => todo!(),
+        }
+    }
+
+    fn send_succesful_reply(&mut self, xid: u32, conn_fd: i32, data: Vec<u8>) {
+        assert!(conn_fd > 2);
+        let buf = encode_succesful_reply(xid, &data);
+
+        let user_data = Send::new(conn_fd, buf);
+
+        let submission =
+            opcode::Send::new(types::Fd(conn_fd), user_data.buf_ptr(), user_data.buf_len())
+                .build()
+                .user_data(Box::new(Operation::Send(user_data)).to_u64());
+
+        // SAFETY: The pointer to the buffer has had its ownership passed to the kernel via
+        // `to_u64()`. TODO: need to manage the lifetime of the conn FD, probably with reference
+        // counting. This is currently broken.
+        unsafe {
+            self.ring
+                .submission()
+                .push(&submission)
+                .expect("queue is full");
+        }
+    }
 }
 
 /// Check for fatal errors in completions. These errors always indicate a BUG in this program.
@@ -258,7 +297,7 @@ fn submit_accept(ring: &mut IoUring, listen_fd: types::Fd, user_data: u64) {
 enum Operation {
     Accept(Accept),
     Recv(Receive),
-    Send,
+    Send(Send),
 }
 
 impl fmt::Display for Operation {
@@ -266,7 +305,7 @@ impl fmt::Display for Operation {
         match self {
             Self::Accept(a) => write!(f, "Accept on FD {}", a.fd),
             Self::Recv(r) => write!(f, "Receive on FD {}", r.fd),
-            Self::Send => write!(f, "Send"),
+            Self::Send(_) => write!(f, "Send"),
         }
     }
 }
@@ -312,7 +351,8 @@ impl Operation {
             // Connection is done:
             0 => {
                 trace!("Closing connection with fd {conn_fd}");
-                // TODO: better resource management of this FD?
+                // TODO: better resource management of this FD? Does this need reference-counted in
+                // case there's an outstanding send on this connection?
                 let _ = unsafe { libc::close(conn_fd) };
 
                 // Return early because there is no need to keep this submission alive anymore:
@@ -323,7 +363,7 @@ impl Operation {
                 let buffer_id: u16 = cqueue::buffer_select(cqe.flags())
                     .expect("Buffer ID should be set on a multishot receive");
 
-                server.handle_received_bytes(buffer_id, amount);
+                server.handle_received_bytes(buffer_id, amount, conn_fd);
             }
         }
 
@@ -384,6 +424,26 @@ struct Receive {
 impl Receive {
     fn new(fd: i32) -> Self {
         Self { fd }
+    }
+}
+
+#[derive(Debug)]
+struct Send {
+    fd: i32,
+    data: Vec<u8>,
+}
+
+impl Send {
+    fn new(fd: i32, data: Vec<u8>) -> Self {
+        Self { fd, data }
+    }
+
+    fn buf_ptr(&self) -> *const u8 {
+        self.data.as_ptr()
+    }
+
+    fn buf_len(&self) -> u32 {
+        self.data.len() as u32
     }
 }
 

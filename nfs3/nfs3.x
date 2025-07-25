@@ -109,7 +109,7 @@ default:
 };
 program NFS_PROGRAM {
 	version NFS_V3 {
-		void NFSPROC3_NULL(void)                    = 0;
-		GetAttrResult NFSPROC3_GETATTR(GetAttrArgs) = 1;
+		void NULL(void)                    = 0;
+		GetAttrResult GETATTR(GetAttrArgs) = 1;
 	} = 3;
 } = 100003;

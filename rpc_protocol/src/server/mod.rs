@@ -151,9 +151,7 @@ impl<T> RpcService<T> {
             let res = procedure(&call, rest, &mut self.private_state);
 
             let _ = match res {
-                RpcResult::Success(data) => {
-                    send_succesful_reply(&mut stream, message.xid, Some(&data))
-                }
+                RpcResult::Success(data) => send_succesful_reply(&mut stream, message.xid, &data),
                 // can reply with either GARBAGE_ARGS, SYSTEM_ERR, or SUCCESS
                 _ => todo!(),
             };
@@ -267,8 +265,15 @@ impl ReplyBody {
 fn send_succesful_reply<S: Read + Write>(
     stream: &mut S,
     xid: u32,
-    arg: Option<&[u8]>,
+    arg: &[u8],
 ) -> Result<(), crate::Error> {
+    let buf = encode_succesful_reply(xid, arg);
+    stream.write_all(&buf)?;
+
+    Ok(())
+}
+
+fn encode_succesful_reply(xid: u32, arg: &[u8]) -> Vec<u8> {
     let body = RpcMessageBody::Reply(ReplyBody::accepted_reply(AcceptedReplyBody::Success(
         [0u8; 0],
     )));
@@ -278,16 +283,12 @@ fn send_succesful_reply<S: Read + Write>(
     let mut buf = buf_with_dummy_record_mark();
     buf.append(&mut message.serialize_alloc());
 
-    if let Some(arg) = arg {
-        // It is illegal to pass an argument that is not padded to a multiple of 4 bytes:
-        assert_eq!(0, arg.len() % 4);
+    // It is illegal to pass an argument that is not padded to a multiple of 4 bytes:
+    assert_eq!(0, arg.len() % 4);
 
-        buf.extend_from_slice(arg);
-    }
+    buf.extend_from_slice(arg);
 
     crate::update_record_mark(&mut buf);
 
-    stream.write_all(&buf)?;
-
-    Ok(())
+    buf
 }

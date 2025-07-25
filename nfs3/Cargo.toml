@@ -19,6 +19,10 @@ path = "src/bin/showmount.rs"
 name = "nfs_server"
 path = "src/bin/nfs_server.rs"
 
+[[bin]]
+name = "nfs_cli"
+path = "src/bin/nfs_cli.rs"
+
 [dependencies]
 clap = { version = "4.5.31", features = ["derive"] }
 env_logger = "0.11.8"
