@@ -5,6 +5,8 @@ use log::*;
 
 use crate::*;
 
+pub mod ring;
+
 /// An RPC Procedure implementation takes a reference to the call body for the request (mainly
 /// useful in case it needs to inspect the credential, for example) as well as a reference to the
 /// encoded argument to the procedure. It returns a result which may be either succesful, and
