@@ -49,7 +49,7 @@ fn read_reply_from_stream<S: Read + Write>(
     xid: u32,
     stream: &mut S,
 ) -> Result<Vec<u8>, crate::Error> {
-    let message_length = decode_record_mark(stream)?;
+    let message_length = stream_record_mark(stream)?;
 
     let mut buf = vec![0; message_length as usize];
     if let Err(e) = stream.read_exact(&mut buf) {

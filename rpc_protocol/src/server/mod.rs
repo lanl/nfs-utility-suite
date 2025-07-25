@@ -109,7 +109,7 @@ impl<T> RpcService<T> {
         mut stream: S,
     ) -> Result<(), crate::Error> {
         loop {
-            let message_length = decode_record_mark(&mut stream)?;
+            let message_length = stream_record_mark(&mut stream)?;
             trace!("got message with record mark: {message_length}");
 
             let mut buf = vec![0; message_length as usize];

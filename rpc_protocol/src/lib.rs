@@ -23,8 +23,19 @@ const RPC_VERSION: u32 = 2;
 /// The possible errors that can arise from trying to read or write an RPC call or reply.
 #[derive(Debug)]
 pub enum Error {
+    /// Protocol errors are always returned by the RPC server implementation before
+    /// even invoking procedure-specific code.
     Protocol(ProtocolError),
+
+    /// Some RPC errors are returned by the server implementation (for example, unknown procedure),
+    /// and some are returned by the procedure implementation (for example garbage args, or
+    /// internal error like ENOMEM).
+    ///
+    // XXX: would it make sense to separate out the library-generated and user-generated errors
+    // into separate variants?
     Rpc(ReplyBody),
+
+    /// Errors returned by I/O failures.
     Io(std::io::Error),
 }
 
@@ -87,12 +98,7 @@ fn update_record_mark(buf: &mut [u8]) {
 }
 
 /// Reads 4 bytes from the given stream, and interprets them as a record mark.
-///
-/// If the record mark indicates that the record is fragmented, returns an error as this
-/// implementation does not yet support record fragments.
-///
-/// Otherwise, returns the length of the message.
-fn decode_record_mark<S: Read + Write>(stream: &mut S) -> Result<u32, crate::Error> {
+fn stream_record_mark<S: Read>(stream: &mut S) -> Result<u32, crate::Error> {
     let mut record_mark_bytes: [u8; 4] = [0; 4];
 
     stream.read_exact(&mut record_mark_bytes).inspect_err(|e| {
@@ -101,7 +107,17 @@ fn decode_record_mark<S: Read + Write>(stream: &mut S) -> Result<u32, crate::Err
         }
     })?;
 
-    let record_mark = u32::from_be_bytes(record_mark_bytes);
+    decode_record_mark(&record_mark_bytes)
+}
+
+/// Returns the length indicated by the record mark.
+///
+/// If the record mark indicates that the record is fragmented, returns an error as this
+/// implementation does not yet support record fragments.
+///
+/// Unlike the `stream_` variant, this can't return an I/O error.
+fn decode_record_mark(mark: &[u8; 4]) -> Result<u32, crate::Error> {
+    let record_mark = u32::from_be_bytes(*mark);
 
     if (record_mark & (1 << 31)) == 0 {
         return Err(Error::Protocol(ProtocolError::MessageFragment));

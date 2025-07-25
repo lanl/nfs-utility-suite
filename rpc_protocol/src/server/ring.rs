@@ -10,6 +10,8 @@ use std::sync::atomic::{AtomicU16, Ordering};
 use io_uring::{cqueue, opcode, types, IoUring};
 use log::*;
 
+use crate::*;
+
 const GROUP_ID: u16 = 42;
 
 pub struct RpcServer {
@@ -60,7 +62,7 @@ impl RpcServer {
                     let conn_fd = r.fd;
                     op.handle_receive(self, cqe, conn_fd);
                 }
-                Operation::Send(_) => {}
+                Operation::Send => {}
             }
         }
     }
@@ -121,7 +123,7 @@ fn submit_accept(ring: &mut IoUring, listen_fd: types::Fd, user_data: u64) {
 enum Operation {
     Accept(Accept),
     Recv(Receive),
-    Send(Send),
+    Send,
 }
 
 impl fmt::Display for Operation {
@@ -129,7 +131,7 @@ impl fmt::Display for Operation {
         match self {
             Self::Accept(a) => write!(f, "Accept on FD {}", a.fd),
             Self::Recv(r) => write!(f, "Receive on FD {}", r.fd),
-            Self::Send(s) => write!(f, "Send: data was {} bytes", s.len),
+            Self::Send => write!(f, "Send"),
         }
     }
 }
@@ -182,7 +184,9 @@ impl Operation {
                     .expect("Buffer ID should be set on a multishot receive");
 
                 // SAFETY: the buffer_id was just gotten from the compltion
-                let buf = unsafe { server.buffer_map.take_buf(buffer_id) };
+                let buf = unsafe { server.buffer_map.borrow_buf(buffer_id) };
+
+                handle_received_bytes(&buf[..amount as usize]);
 
                 eprintln!("{:?}", &buf[..amount as usize]);
             }
@@ -248,10 +252,33 @@ impl Receive {
     }
 }
 
-#[derive(Debug)]
-struct Send {
-    buf: Box<[u8]>,
-    len: usize,
+/// Given bytes received in `buf`, tries to interpret them as an RPC message.
+fn handle_received_bytes(mut buf: &[u8]) {
+    if buf.len() < 4 {
+        // TODO: eventually, this should either try to recv more data, or just submit a
+        // cancellation request and close the connection.
+        todo!("Not enough bytes to read a record marker. Giving up.");
+    }
+
+    let Ok(record_mark) = crate::decode_record_mark(&buf[..4].try_into().unwrap()) else {
+        // TODO: either handle this case, or submit a cancellation and close.
+        todo!("Not handling message fragments. Giving up");
+    };
+
+    buf = &buf[4..]; // Advance buf past the record mark.
+
+    if buf.len() < record_mark as usize {
+        // TODO: need to read more data, unfortunately it will come back in anothe buffer, I assume
+        todo!("Read was too short. Giving up");
+    }
+
+    let mut message = RpcMessage::default();
+    if let Err(e) = message.deserialize(&mut buf) {
+        warn!("Error deserializing message: {e}");
+        todo!("Return an error for invalid message");
+    }
+
+    eprintln!("{message:?}");
 }
 
 /// A memory map of a ring of buffer descriptors shared with the kernel.
@@ -366,6 +393,13 @@ impl BufferMap {
     /// result in a data race with the kernel writing to that buffer.
     pub unsafe fn take_buf(&mut self, id: u16) -> Box<[u8]> {
         std::mem::take(&mut self.buffers[id as usize])
+    }
+
+    /// SAFETY:
+    ///
+    /// Has the same requirements as take_buf()
+    pub unsafe fn borrow_buf(&mut self, id: u16) -> &[u8] {
+        &self.buffers[id as usize]
     }
 
     /// SAFETY:
