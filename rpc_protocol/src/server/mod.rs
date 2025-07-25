@@ -165,39 +165,7 @@ impl<T> RpcService<T> {
     ///
     /// Otherwise, returns the appropiate kind of error.
     fn validate_call(&self, call: &CallBody) -> Result<RpcProcedure<T>, Error> {
-        // The RPC version must always be 2:
-        if call.rpcvers != RPC_VERSION {
-            warn!("CALL with unexpected RPC version {}", call.rpcvers);
-            // This could reply with a "RpcMismatch" reply instead...
-            return Err(Error::Protocol(ProtocolError::WrongRpcVersion));
-        }
-
-        // This implementation currently only supports auth styles "None" and "Sys":
-        match call.cred.flavor {
-            AuthFlavor::None => {}
-            AuthFlavor::Sys => {}
-            _ => {
-                debug!("CALL with unsupported auth: {:?}", call.cred);
-                let reply = ReplyBody::Denied(RejectedReply::AuthError(AuthStat::RejectedCred));
-                return Err(crate::Error::Rpc(reply));
-            }
-        };
-
-        if call.prog != self.program {
-            debug!("CALL for unknown program {}", call.prog);
-            let reply = ReplyBody::accepted_reply(AcceptedReplyBody::ProgUnavail);
-            return Err(crate::Error::Rpc(reply));
-        }
-
-        if call.vers < self.version_min || call.vers > self.version_max {
-            debug!("CALL for unknown version {}", call.vers);
-            let reply =
-                ReplyBody::accepted_reply(AcceptedReplyBody::ProgMismatch(ProgMismatchBody {
-                    low: self.version_min,
-                    high: self.version_max,
-                }));
-            return Err(crate::Error::Rpc(reply));
-        }
+        validate_program_and_version(call, self.program, self.version_min, self.version_max)?;
 
         if call.proc == 0 {
             return Ok(null_procedure);
@@ -217,6 +185,47 @@ impl<T> RpcService<T> {
 
         Ok(procedure)
     }
+}
+
+fn validate_program_and_version(
+    call: &CallBody,
+    program: u32,
+    version_min: u32,
+    version_max: u32,
+) -> Result<(), Error> {
+    // The RPC version must always be 2:
+    if call.rpcvers != RPC_VERSION {
+        warn!("CALL with unexpected RPC version {}", call.rpcvers);
+        // This could reply with a "RpcMismatch" reply instead...
+        return Err(Error::Protocol(ProtocolError::WrongRpcVersion));
+    }
+
+    // This implementation currently only supports auth styles "None" and "Sys":
+    match call.cred.flavor {
+        AuthFlavor::None => {}
+        AuthFlavor::Sys => {}
+        _ => {
+            debug!("CALL with unsupported auth: {:?}", call.cred);
+            let reply = ReplyBody::Denied(RejectedReply::AuthError(AuthStat::RejectedCred));
+            return Err(crate::Error::Rpc(reply));
+        }
+    };
+
+    if call.prog != program {
+        debug!("CALL for unknown program {}", call.prog);
+        let reply = ReplyBody::accepted_reply(AcceptedReplyBody::ProgUnavail);
+        return Err(crate::Error::Rpc(reply));
+    }
+
+    if call.vers < version_min || call.vers > version_max {
+        debug!("CALL for unknown version {}", call.vers);
+        let reply = ReplyBody::accepted_reply(AcceptedReplyBody::ProgMismatch(ProgMismatchBody {
+            low: version_min,
+            high: version_max,
+        }));
+        return Err(crate::Error::Rpc(reply));
+    }
+    Ok(())
 }
 
 /// Write a reply to the stream without encoding any procedure result (for example, an error reply).

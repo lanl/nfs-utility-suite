@@ -12,16 +12,71 @@ use log::*;
 
 use crate::*;
 
+use super::{validate_program_and_version, RpcResult};
+
 const GROUP_ID: u16 = 42;
 
-pub struct RpcServer {
+/// The io_uring implementation has a custom procedure type that returns a RingResult rather than
+/// the RpcResult.
+pub type RingProcedure<T> = fn(&CallBody, &[u8], &mut T) -> RingResult;
+pub type RingProcedureList<T> = Vec<Option<RingProcedure<T>>>;
+
+pub enum RingResult {
+    /// A procedure implementation can either complete synchronously, in which case it returns the
+    /// immediate result as an RpcResult...
+    Done(RpcResult),
+
+    /// ...or it may need to do I/O, which will use this thread's io_uring instance. The RpcServer
+    /// will submit the Entry on behalf of the procedure implemenation, and call a user-supplied
+    /// callback (TODO: implement this...) when the completion comes in.
+    MoreIo(cqueue::Entry),
+}
+
+/// A mapping between RPC procedures (identified by program, version, and procedure numbers), and
+/// the Rust code that implements them.
+pub struct ProcedureMap<T> {
+    /// The program number of this RPC service.
+    program: u32,
+
+    /// The min version number of this RPC service.
+    version_min: u32,
+
+    /// The max version number of this RPC service.
+    version_max: u32,
+
+    /// The mapping of procedure numbers to functions that implement the procedures.
+    /// The 0th element of this array is ignored because it is always mapped to the NULL procedure.
+    /// This structure assumes that al the versions between version_min and version_max share the
+    /// same procedures. If that assumption should turn false in the future, this structure will
+    /// have to be modified.
+    procedures: RingProcedureList<T>,
+}
+
+impl<T> ProcedureMap<T> {
+    pub fn new(
+        program: u32,
+        version_min: u32,
+        version_max: u32,
+        procedures: RingProcedureList<T>,
+    ) -> Self {
+        Self {
+            program,
+            version_min,
+            version_max,
+            procedures,
+        }
+    }
+}
+
+pub struct RpcServer<T> {
     ring: IoUring,
     listener: TcpListener,
     buffer_map: BufferMap,
+    procedure_map: ProcedureMap<T>,
 }
 
-impl RpcServer {
-    pub fn new(address: &str) -> io::Result<Self> {
+impl<T> RpcServer<T> {
+    pub fn new(address: &str, procedure_map: ProcedureMap<T>) -> io::Result<Self> {
         let mut ring = IoUring::new(1024)?;
         let buffer_map = BufferMap::new(&mut ring);
 
@@ -29,6 +84,7 @@ impl RpcServer {
             ring,
             listener: TcpListener::bind(address)?,
             buffer_map,
+            procedure_map,
         };
 
         ring.submit_multishot_accept();
@@ -88,6 +144,85 @@ impl RpcServer {
             }
         };
     }
+
+    /// Given `amount` bytes received in a buffer identified by `buffer_id`, try to interpret those
+    /// bytes as an RPC message.
+    ///
+    /// If the RPC message is valid and for a procedure implemented by this service, then calls the
+    /// procedure implementation.
+    ///
+    /// Otherwise, returns an error.
+    fn handle_received_bytes(&mut self, buffer_id: u16, amount: i32) {
+        assert!(amount > 0);
+
+        // SAFETY: the buffer_id was just gotten from a completion.
+        let orig_buf = unsafe { self.buffer_map.take_buf(buffer_id) };
+
+        let mut buf = &orig_buf[..amount as usize];
+
+        if buf.len() < 4 {
+            // TODO: eventually, this should either try to recv more data, or just submit a
+            // cancellation request and close the connection.
+            todo!("Not enough bytes to read a record marker. Giving up.");
+        }
+
+        let Ok(record_mark) = crate::decode_record_mark(&buf[..4].try_into().unwrap()) else {
+            // TODO: either handle this case, or submit a cancellation and close.
+            todo!("Not handling message fragments. Giving up");
+        };
+
+        buf = &buf[4..]; // Advance buf past the record mark.
+
+        if buf.len() < record_mark as usize {
+            // TODO: need to read more data, unfortunately it will come back in anothe buffer, I assume
+            todo!("Read was too short. Giving up");
+        }
+
+        let mut message = RpcMessage::default();
+        if let Err(e) = message.deserialize(&mut buf) {
+            debug!("Error deserializing message: {e}");
+            todo!("Return an error for invalid message");
+        }
+
+        // The client better have sent a "call" message:
+        let RpcMessageBody::Call(call) = message.body else {
+            debug!("Received a REPLY message, expected CALL");
+            todo!("Handle this");
+        };
+
+        eprintln!("{call:?}");
+
+        let map = &self.procedure_map;
+        let Ok(()) =
+            validate_program_and_version(&call, map.program, map.version_min, map.version_max)
+        else {
+            todo!("Handle this");
+        };
+
+        if call.proc == 0 {
+            todo!("Implement null procedure");
+        }
+
+        if call.proc as usize > map.procedures.len() - 1 {
+            debug!("CALL for unknown procedure {}", call.proc);
+            todo!("handle this");
+        }
+
+        let Some(procedure) = map.procedures[call.proc as usize] else {
+            debug!("CALL for unimplemented procedure {}", call.proc);
+            todo!("handle this");
+        };
+
+        self.call_user_procedure(buf, procedure);
+
+        // SAFETY: the buffer being resubmitted was just taken at the beginning of this function,
+        // and has not been re-submitted before this call.
+        unsafe {
+            self.buffer_map.resubmit_buf(orig_buf, buffer_id);
+        }
+    }
+
+    fn call_user_procedure(&mut self, _buf: &[u8], _proc: RingProcedure<T>) {}
 }
 
 /// Check for fatal errors in completions. These errors always indicate a BUG in this program.
@@ -164,7 +299,12 @@ impl Operation {
         }
     }
 
-    fn handle_receive(self: Box<Self>, server: &mut RpcServer, cqe: cqueue::Entry, conn_fd: i32) {
+    fn handle_receive<T>(
+        self: Box<Self>,
+        server: &mut RpcServer<T>,
+        cqe: cqueue::Entry,
+        conn_fd: i32,
+    ) {
         match cqe.result() {
             res if res < 0 => {
                 warn!("Error in Receive completion: {cqe:?}");
@@ -183,12 +323,7 @@ impl Operation {
                 let buffer_id: u16 = cqueue::buffer_select(cqe.flags())
                     .expect("Buffer ID should be set on a multishot receive");
 
-                // SAFETY: the buffer_id was just gotten from the compltion
-                let buf = unsafe { server.buffer_map.borrow_buf(buffer_id) };
-
-                handle_received_bytes(&buf[..amount as usize]);
-
-                eprintln!("{:?}", &buf[..amount as usize]);
+                server.handle_received_bytes(buffer_id, amount);
             }
         }
 
@@ -252,36 +387,8 @@ impl Receive {
     }
 }
 
-/// Given bytes received in `buf`, tries to interpret them as an RPC message.
-fn handle_received_bytes(mut buf: &[u8]) {
-    if buf.len() < 4 {
-        // TODO: eventually, this should either try to recv more data, or just submit a
-        // cancellation request and close the connection.
-        todo!("Not enough bytes to read a record marker. Giving up.");
-    }
-
-    let Ok(record_mark) = crate::decode_record_mark(&buf[..4].try_into().unwrap()) else {
-        // TODO: either handle this case, or submit a cancellation and close.
-        todo!("Not handling message fragments. Giving up");
-    };
-
-    buf = &buf[4..]; // Advance buf past the record mark.
-
-    if buf.len() < record_mark as usize {
-        // TODO: need to read more data, unfortunately it will come back in anothe buffer, I assume
-        todo!("Read was too short. Giving up");
-    }
-
-    let mut message = RpcMessage::default();
-    if let Err(e) = message.deserialize(&mut buf) {
-        warn!("Error deserializing message: {e}");
-        todo!("Return an error for invalid message");
-    }
-
-    eprintln!("{message:?}");
-}
-
-/// A memory map of a ring of buffer descriptors shared with the kernel.
+/// A memory map of a ring of buffer descriptors shared with the kernel, along with the buffers
+/// themselves.
 struct BufferMap {
     /// Pointer to the memory shared with the kernel which holds the `struct io_uring_buf`s. Its
     /// size is `sizeof(struct io_uring_buf) * num_entries`.
@@ -291,7 +398,7 @@ struct BufferMap {
     num_entries: u16,
 
     /// The size of each buffer.
-    buf_size: u32,
+    _buf_size: u32,
 
     /// The tail of the ring, including unpublished buffers. This is the index of the next unused
     /// slot.
@@ -328,7 +435,7 @@ impl BufferMap {
         let mut buffer_map = Self {
             addr,
             num_entries,
-            buf_size,
+            _buf_size: buf_size,
             private_tail: 0,
             group_id: GROUP_ID,
             buffers: Vec::new(),
@@ -398,7 +505,7 @@ impl BufferMap {
     /// SAFETY:
     ///
     /// Has the same requirements as take_buf()
-    pub unsafe fn borrow_buf(&mut self, id: u16) -> &[u8] {
+    pub unsafe fn borrow_buf(&self, id: u16) -> &[u8] {
         &self.buffers[id as usize]
     }
 
@@ -406,7 +513,7 @@ impl BufferMap {
     ///
     /// Has the same requirements as take_buf()
     pub unsafe fn resubmit_buf(&mut self, mut buf: Box<[u8]>, id: u16) {
-        self.push_buf(buf.as_mut_ptr(), self.buf_size, id);
+        self.push_buf(buf.as_mut_ptr(), self._buf_size, id);
         self.buffers[id as usize] = buf;
         self.publish_bufs();
     }
