@@ -2,6 +2,7 @@
 resolver = "1"
 
 members = [
+    "exports",
     "nfs3",
     "rpc_protocol",
     "tests/alloc",
