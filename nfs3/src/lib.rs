@@ -5,6 +5,4 @@ pub mod mount {
     include!(concat!(env!("OUT_DIR"), "/mount_proto.rs"));
 }
 
-pub mod nfs3_xdr {
-    include!(concat!(env!("OUT_DIR"), "/nfs3.rs"));
-}
+include!(concat!(env!("OUT_DIR"), "/nfs3_xdr.rs"));

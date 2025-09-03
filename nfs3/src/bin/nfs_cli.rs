@@ -5,7 +5,7 @@ use std::{io, net::TcpStream};
 
 use clap::{Parser, Subcommand};
 
-use nfs3::{nfs3_xdr::nfs3::procedures::*, nfs3_xdr::nfs3::*};
+use ::nfs3::{nfs3_xdr::procedures::*, nfs3_xdr::*};
 use rpc_protocol::client::*;
 
 #[derive(Debug, Parser)]
