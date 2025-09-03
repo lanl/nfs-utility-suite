@@ -40,7 +40,7 @@ impl SymbolTable {
     }
 
     /// Tries to resolve a name to its underlying type.
-    pub fn lookup_definition(&self, name: &str) -> Result<Ref<Definition>, XdrError> {
+    pub fn lookup_definition(&self, name: &str) -> Result<Ref<'_, Definition>, XdrError> {
         match self.tab.get(name) {
             Some(ent) => Ok(ent.borrow()),
             None => Err(XdrError::UndefinedName(name.to_string())),

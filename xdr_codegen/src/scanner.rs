@@ -69,7 +69,7 @@ pub struct Scanner<'src> {
 }
 
 impl<'src> Scanner<'src> {
-    pub fn new(source: &str) -> Scanner {
+    pub fn new(source: &str) -> Scanner<'_> {
         Scanner {
             source,
             chars: source.char_indices().peekable(),
