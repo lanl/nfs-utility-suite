@@ -18,7 +18,7 @@ pub fn main(addr: RpcbindServerAddress) {
 
     let procedures: Vec<Option<RpcProcedure<rpcbind::RpcbindList>>> =
         vec![None, Some(set), None, Some(getaddr), Some(dump)];
-    let mut server = RpcService::new(RPCBPROG, RPCBVERS::VERSION, 4, procedures, service_list);
+    let mut server = RpcProgram::new(RPCBPROG, RPCBVERS::VERSION, 4, procedures, service_list);
 
     match addr {
         RpcbindServerAddress::Tcp(addr) => {

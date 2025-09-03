@@ -42,7 +42,7 @@ fn main() {
 
     let handle = std::thread::spawn(|| {
         let state = MountState::new();
-        let mut server = RpcService::new(
+        let mut server = RpcProgram::new(
             MOUNT_PROGRAM,
             MOUNT_V3::VERSION,
             MOUNT_V3::VERSION,

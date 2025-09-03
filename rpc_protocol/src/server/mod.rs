@@ -33,7 +33,7 @@ pub enum RpcResult {
 /// An RPC Service is defined by its program and version numbers, and a map from procedure numbers
 /// to the actual procedures which implement them. The private state is shared by each procedure
 /// implementation in the service.
-pub struct RpcService<T> {
+pub struct RpcProgram<T> {
     /// The program number of this RPC service.
     program: u32,
 
@@ -72,7 +72,7 @@ impl Listener<std::os::unix::net::UnixStream> for std::os::unix::net::UnixListen
     }
 }
 
-impl<T> RpcService<T> {
+impl<T> RpcProgram<T> {
     pub fn new(
         program: u32,
         version_min: u32,

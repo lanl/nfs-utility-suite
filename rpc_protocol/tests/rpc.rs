@@ -116,14 +116,14 @@ fn call_invalid_rpc_version() {
     assert_eq!(res.kind(), std::io::ErrorKind::UnexpectedEof);
 }
 
-/// Launches an RpcService with program number 7, version range 2-4, and one procedure defined (in
+/// Launches an RpcProgram with program number 7, version range 2-4, and one procedure defined (in
 /// addition to procedure 0 which is always defined.)
 ///
 /// Returns a client endpoint for comunicating with the service.
 fn launch_example_server() -> pipe::Endpoint {
     let (client_endpoint, mut server_endpoint) = pipe::pipe().unwrap();
 
-    let mut server = server::RpcService::new(7, 2, 4, vec![None, Some(server::null_procedure)], ());
+    let mut server = server::RpcProgram::new(7, 2, 4, vec![None, Some(server::null_procedure)], ());
 
     std::thread::spawn(move || {
         server.handle_connection(&mut server_endpoint).unwrap();
