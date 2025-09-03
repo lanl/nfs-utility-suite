@@ -9,9 +9,14 @@ LANL software release number: O4912. See the LICENSE file for copyright and lice
 - `xdr_codegen/` -- this directory houses the library used to compile an XDR language specification
   into a Rust library that implements the [de]serialization of the defined data types.
 - `test_xdr/` -- this directory holds tests for the `xdr_codegen` library
-- `rpc_protocol` -- this directory holds a library that implements the RPC protocol, as well as
+- `rpc_protocol/` -- this directory holds a library that implements the RPC protocol, as well as
   binaries that implement the rpcbind protocol, both client and server side. These are effectively
   (currently incomplete) clones of the standard `rpcbind` and `rpcinfo` binaries.
+- `nfs3/` -- programs and libraries related to the NFS v3 protocol
+
+## `nfs3`
+
+See [nfs3/README.md](nfs3/README.md) for information on the NFS v3 programs.
 
 ## `xdr_codegen`
 
