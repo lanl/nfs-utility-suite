@@ -3,12 +3,9 @@
 
 use std::net::TcpListener;
 
-use rpc_protocol::rpcbind;
-use rpc_protocol::server::*;
-use rpc_protocol::CallBody;
+use rpc_protocol::{rpcbind, server::*, CallBody};
 
-use nfs3::mount::mount_proto::procedures::*;
-use nfs3::mount::mount_proto::*;
+use nfs3::{mount::mount_proto::procedures::*, mount::mount_proto::*};
 
 struct MountState {
     exports: Exports,

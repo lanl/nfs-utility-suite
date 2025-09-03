@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright 2025. Triad National Security, LLC.
 
-use rpc_protocol::server::ring::*;
-use rpc_protocol::server::RpcResult;
-use rpc_protocol::CallBody;
+use rpc_protocol::{server::ring::*, server::RpcResult, CallBody};
 
 use nfs3::nfs3_xdr::nfs3::{procedures::*, *};
 
