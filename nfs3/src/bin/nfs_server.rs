@@ -5,7 +5,7 @@ use rpc_protocol::server::ring::*;
 use rpc_protocol::server::RpcResult;
 use rpc_protocol::CallBody;
 
-use nfs3::nfs3::nfs3::{procedures::*, *};
+use nfs3::nfs3_xdr::nfs3::{procedures::*, *};
 
 struct ServerState {}
 

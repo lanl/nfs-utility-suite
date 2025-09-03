@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright 2025. Triad National Security, LLC.
 
-use std::io;
-use std::net::TcpStream;
+use std::{io, net::TcpStream};
 
 use clap::{Parser, Subcommand};
 
-use nfs3::nfs3::nfs3::procedures::*;
-use nfs3::nfs3::nfs3::*;
+use nfs3::{nfs3_xdr::nfs3::procedures::*, nfs3_xdr::nfs3::*};
 use rpc_protocol::client::*;
 
 #[derive(Debug, Parser)]
