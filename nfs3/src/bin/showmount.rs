@@ -5,7 +5,7 @@ use std::net::TcpStream;
 
 use clap::Parser;
 
-use nfs3::mount::mount_proto::*;
+use nfs3::mount_proto::*;
 use rpc_protocol::client::*;
 
 #[derive(Parser)]
