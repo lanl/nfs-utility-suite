@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright 2025. Triad National Security, LLC.
 
-use std::cell::{Ref, RefCell};
-use std::collections::HashMap;
+use std::{
+    cell::{Ref, RefCell},
+    collections::HashMap,
+};
 
-use crate::ast::*;
-use crate::XdrError;
+use crate::{ast::*, XdrError};
 
 pub struct SymbolTable {
     pub tab: HashMap<UnresolvedName, RefCell<Definition>>,

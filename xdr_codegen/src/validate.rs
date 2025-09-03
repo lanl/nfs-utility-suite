@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright 2025. Triad National Security, LLC.
 
-use crate::ast::*;
-use crate::symbol_table::*;
-use crate::XdrError;
+use crate::{ast::*, symbol_table::*, XdrError};
 
 pub struct ValidatedSchema {
     /// This owns the definitions of the... definitions.

@@ -8,10 +8,12 @@ mod scanner;
 mod symbol_table;
 mod validate;
 
-use std::error::Error;
-use std::fmt;
-use std::io::{self, Read};
-use std::path::{Path, PathBuf};
+use std::{
+    error::Error,
+    fmt,
+    io::{self, Read},
+    path::{Path, PathBuf},
+};
 
 use parser::Parser;
 use scanner::{Scanner, Token};

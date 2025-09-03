@@ -3,13 +3,17 @@
 
 use log::*;
 
-use std::io::{Read, Write};
-use std::net::TcpStream;
-use std::os::unix::net::UnixStream;
+use std::{
+    io::{Read, Write},
+    net::TcpStream,
+    os::unix::net::UnixStream,
+};
 
-use crate::client::*;
-use crate::rpcbind::{self, procedures::*, RpcbindServerAddress};
-use crate::*;
+use crate::{
+    client::*,
+    rpcbind::{self, procedures::*, RpcbindServerAddress},
+    *,
+};
 
 /// Try to call the SET RPC for the RPCBIND server listening at `address`, to add `new_service` to
 /// its service list.

@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright 2025. Triad National Security, LLC.
 
-use crate::ast::*;
-use crate::scanner::*;
+use crate::{ast::*, scanner::*};
 
 pub struct Parser<'src> {
     scanner: Scanner<'src>,

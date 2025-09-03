@@ -5,8 +5,10 @@ pub mod client;
 pub mod rpcbind;
 pub mod server;
 
-use std::fmt;
-use std::io::{Read, Write};
+use std::{
+    fmt,
+    io::{Read, Write},
+};
 
 include!(concat!(env!("OUT_DIR"), "/rpc_prot.rs"));
 

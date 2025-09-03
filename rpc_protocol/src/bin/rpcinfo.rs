@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright 2025. Triad National Security, LLC.
 
-use clap::Parser;
 use std::net::TcpStream;
+
+use clap::Parser;
 
 include!(concat!(env!("OUT_DIR"), "/rpcbind.rs"));
 
