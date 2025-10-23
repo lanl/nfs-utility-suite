@@ -37,7 +37,8 @@ fn main() {
 }
 
 #[cfg(target_os = "linux")]
-fn getattr(_call: &CallBody, arg: &[u8], _state: &mut ServerState) -> RingResult {
+fn getattr(call: &Call, _state: &mut ServerState) -> RingResult {
+    let arg = call.arg;
     eprintln!("in getattr impl: {arg:?}");
 
     let obj_attributes = FileAttributes::default();
