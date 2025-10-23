@@ -5,8 +5,6 @@ use log::*;
 
 use crate::*;
 
-pub mod ring;
-
 /// An RPC Procedure implementation takes a reference to the RPC call information for the request
 /// which allows it to inspect the credential, and also contains the encoded argument to the
 /// procedure. It returns a result which may be either succesful, and contains the encoded response,
@@ -172,7 +170,7 @@ impl<T> RpcProgram<T> {
     }
 }
 
-fn validate_program_and_version(
+pub fn validate_program_and_version(
     call: &Call,
     program: u32,
     version_min: u32,
@@ -257,7 +255,7 @@ fn send_succesful_reply<S: Read + Write>(
     Ok(())
 }
 
-fn encode_succesful_reply(xid: u32, arg: &[u8]) -> Vec<u8> {
+pub fn encode_succesful_reply(xid: u32, arg: &[u8]) -> Vec<u8> {
     let body = RpcMessageBody::Reply(ReplyBody::accepted_reply(AcceptedReplyBody::Success(
         [0u8; 0],
     )));

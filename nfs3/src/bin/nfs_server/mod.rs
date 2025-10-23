@@ -3,9 +3,13 @@
 
 use clap::Parser;
 
-use rpc_protocol::{server::ring::*, server::RpcResult, Call};
+use rpc_protocol::{server::RpcResult, Call};
 
 use ::nfs3::nfs3_xdr::{procedures::*, *};
+
+mod ring;
+
+use crate::ring::*;
 
 #[derive(Parser)]
 struct Cli {

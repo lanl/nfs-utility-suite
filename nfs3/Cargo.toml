@@ -17,7 +17,7 @@ path = "src/bin/showmount.rs"
 
 [[bin]]
 name = "nfs_server"
-path = "src/bin/nfs_server.rs"
+path = "src/bin/nfs_server/mod.rs"
 
 [[bin]]
 name = "nfs_cli"
@@ -28,6 +28,9 @@ clap = { version = "4.5.31", features = ["derive"] }
 env_logger = "0.11.8"
 rpc_protocol = { path = "../rpc_protocol" }
 log = "0.4.27"
+libc = "0.2"
+io-uring = "0.7"
+nix = { version = "0.30.1", features = ["socket"] }
 
 [build-dependencies]
 xdr_codegen = { path = "../xdr_codegen" }

@@ -234,7 +234,10 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "env_logger",
+ "io-uring",
+ "libc",
  "log",
+ "nix",
  "rpc_protocol",
  "xdr_codegen",
 ]
@@ -326,8 +329,6 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "env_logger",
- "io-uring",
- "libc",
  "log",
  "nix",
  "xdr_codegen",
