@@ -198,7 +198,7 @@ fn stream_record_mark<S: Read>(stream: &mut S) -> Result<u32, crate::Error> {
 /// implementation does not yet support record fragments.
 ///
 /// Unlike the `stream_` variant, this can't return an I/O error.
-fn decode_record_mark(mark: &[u8; 4]) -> Result<u32, crate::Error> {
+pub fn decode_record_mark(mark: &[u8; 4]) -> Result<u32, crate::Error> {
     let record_mark = u32::from_be_bytes(*mark);
 
     if (record_mark & (1 << 31)) == 0 {

@@ -5,8 +5,14 @@
 use {
     clap::Parser,
     nfs3::nfs3_xdr::{procedures::*, *},
-    rpc_protocol::{server::ring::*, server::RpcResult, CallBody},
+    rpc_protocol::{server::RpcResult, Call},
 };
+
+#[cfg(target_os = "linux")]
+mod ring;
+
+#[cfg(target_os = "linux")]
+use crate::ring::*;
 
 #[cfg(target_os = "linux")]
 #[derive(Parser)]

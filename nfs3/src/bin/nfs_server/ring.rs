@@ -10,9 +10,7 @@ use std::sync::atomic::{AtomicU16, Ordering};
 use io_uring::{cqueue, opcode, types, IoUring};
 use log::*;
 
-use crate::*;
-
-use super::{encode_succesful_reply, validate_program_and_version, RpcResult};
+use rpc_protocol::{server::*, *};
 
 const GROUP_ID: u16 = 42;
 
@@ -173,7 +171,7 @@ impl<T> RpcServer<T> {
             todo!("Not enough bytes to read a record marker. Giving up.");
         }
 
-        let Ok(record_mark) = crate::decode_record_mark(&buf[..4].try_into().unwrap()) else {
+        let Ok(record_mark) = decode_record_mark(&buf[..4].try_into().unwrap()) else {
             // TODO: either handle this case, or submit a cancellation and close.
             todo!("Not handling message fragments. Giving up");
         };
@@ -219,7 +217,7 @@ impl<T> RpcServer<T> {
 
         let res = procedure(&call, &mut self.user_state);
 
-        self.process_user_result(res, call.xid, conn_fd);
+        self.process_user_result(res, call.get_xid(), conn_fd);
 
         // SAFETY: the buffer being resubmitted was just taken at the beginning of this function,
         // and has not been re-submitted before this call.
