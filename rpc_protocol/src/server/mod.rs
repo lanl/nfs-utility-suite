@@ -7,14 +7,14 @@ use crate::*;
 
 pub mod ring;
 
-/// An RPC Procedure implementation takes a reference to the call body for the request (mainly
-/// useful in case it needs to inspect the credential, for example) as well as a reference to the
-/// encoded argument to the procedure. It returns a result which may be either succesful, and
-/// contains the encoded response, or unsuccesful.
-pub type RpcProcedure<T> = fn(&CallBody, &[u8], &mut T) -> RpcResult;
+/// An RPC Procedure implementation takes a reference to the RPC call information for the request
+/// which allows it to inspect the credential, and also contains the encoded argument to the
+/// procedure. It returns a result which may be either succesful, and contains the encoded response,
+/// or unsuccesful.
+pub type RpcProcedure<T> = fn(&Call, &mut T) -> RpcResult;
 
 /// The NULL Procedure is defined for every service and does nothing, succesfully.
-pub fn null_procedure<T>(_call: &CallBody, _arg: &[u8], _state: &mut T) -> RpcResult {
+pub fn null_procedure<T>(_call: &Call, _state: &mut T) -> RpcResult {
     RpcResult::Success(vec![])
 }
 
@@ -117,41 +117,26 @@ impl<T> RpcProgram<T> {
                 .read_exact(&mut buf)
                 .inspect_err(|e| warn!("Error reading message from stream: {e}"))?;
 
-            let mut message = RpcMessage::default();
-            let mut rest = buf.as_slice();
-            if let Err(e) = message.deserialize(&mut rest) {
-                warn!("Error deserializing message: {e}");
-                return Err(Error::Protocol(ProtocolError::Decode));
-            }
-
-            // The client better have sent a "call" message:
-            let RpcMessageBody::Call(call) = message.body else {
-                return Err(Error::Protocol(ProtocolError::Decode));
+            let call = match decode_call(&buf) {
+                Ok(call) => call,
+                Err(e) => return Err(Error::Protocol(e)),
             };
-
-            debug!(
-                "recieved CALL for program {}, version {}, procedure {}, argument length {} bytes",
-                call.prog,
-                call.vers,
-                call.proc,
-                rest.len(),
-            );
 
             let procedure = match self.validate_call(&call) {
                 Ok(proc) => proc,
                 Err(e) => {
                     if let Error::Rpc(reply) = e {
-                        send_reply_no_arg(&mut stream, message.xid, reply)?;
+                        send_reply_no_arg(&mut stream, call.xid, reply)?;
                     }
 
                     return Ok(());
                 }
             };
 
-            let res = procedure(&call, rest, &mut self.private_state);
+            let res = procedure(&call, &mut self.private_state);
 
             let _ = match res {
-                RpcResult::Success(data) => send_succesful_reply(&mut stream, message.xid, &data),
+                RpcResult::Success(data) => send_succesful_reply(&mut stream, call.xid, &data),
                 // can reply with either GARBAGE_ARGS, SYSTEM_ERR, or SUCCESS
                 _ => todo!(),
             };
@@ -162,21 +147,23 @@ impl<T> RpcProgram<T> {
     /// procedure which implements that call.
     ///
     /// Otherwise, returns the appropiate kind of error.
-    fn validate_call(&self, call: &CallBody) -> Result<RpcProcedure<T>, Error> {
+    fn validate_call(&self, call: &Call) -> Result<RpcProcedure<T>, Error> {
         validate_program_and_version(call, self.program, self.version_min, self.version_max)?;
 
-        if call.proc == 0 {
+        let procedure_number = call.get_procedure();
+
+        if procedure_number == 0 {
             return Ok(null_procedure);
         }
 
-        if call.proc as usize > self.procedures.len() - 1 {
-            debug!("CALL for unknown procedure {}", call.proc);
+        if procedure_number as usize > self.procedures.len() - 1 {
+            debug!("CALL for unknown procedure {}", procedure_number);
             let reply = ReplyBody::accepted_reply(AcceptedReplyBody::ProcUnavail);
             return Err(crate::Error::Rpc(reply));
         }
 
-        let Some(procedure) = self.procedures[call.proc as usize] else {
-            debug!("CALL for unimplemented procedure {}", call.proc);
+        let Some(procedure) = self.procedures[procedure_number as usize] else {
+            debug!("CALL for unimplemented procedure {}", procedure_number);
             let reply = ReplyBody::accepted_reply(AcceptedReplyBody::ProcUnavail);
             return Err(crate::Error::Rpc(reply));
         };
@@ -186,37 +173,34 @@ impl<T> RpcProgram<T> {
 }
 
 fn validate_program_and_version(
-    call: &CallBody,
+    call: &Call,
     program: u32,
     version_min: u32,
     version_max: u32,
 ) -> Result<(), Error> {
-    // The RPC version must always be 2:
-    if call.rpcvers != RPC_VERSION {
-        warn!("CALL with unexpected RPC version {}", call.rpcvers);
-        // This could reply with a "RpcMismatch" reply instead...
-        return Err(Error::Protocol(ProtocolError::WrongRpcVersion));
-    }
-
     // This implementation currently only supports auth styles "None" and "Sys":
-    match call.cred.flavor {
+    let credential = call.get_credential();
+
+    match credential.flavor {
         AuthFlavor::None => {}
         AuthFlavor::Sys => {}
         _ => {
-            debug!("CALL with unsupported auth: {:?}", call.cred);
+            debug!("CALL with unsupported auth: {:?}", credential);
             let reply = ReplyBody::Denied(RejectedReply::AuthError(AuthStat::RejectedCred));
             return Err(crate::Error::Rpc(reply));
         }
     };
 
-    if call.prog != program {
-        debug!("CALL for unknown program {}", call.prog);
+    let call_prog = call.get_program();
+    if call_prog != program {
+        debug!("CALL for unknown program {}", call_prog);
         let reply = ReplyBody::accepted_reply(AcceptedReplyBody::ProgUnavail);
         return Err(crate::Error::Rpc(reply));
     }
 
-    if call.vers < version_min || call.vers > version_max {
-        debug!("CALL for unknown version {}", call.vers);
+    let version = call.get_version();
+    if version < version_min || version > version_max {
+        debug!("CALL for unknown version {}", version);
         let reply = ReplyBody::accepted_reply(AcceptedReplyBody::ProgMismatch(ProgMismatchBody {
             low: version_min,
             high: version_max,

@@ -18,7 +18,7 @@ const GROUP_ID: u16 = 42;
 
 /// The io_uring implementation has a custom procedure type that returns a RingResult rather than
 /// the RpcResult.
-pub type RingProcedure<T> = fn(&CallBody, &[u8], &mut T) -> RingResult;
+pub type RingProcedure<T> = fn(&Call, &mut T) -> RingResult;
 pub type RingProcedureList<T> = Vec<Option<RingProcedure<T>>>;
 
 pub enum RingResult {
@@ -185,16 +185,12 @@ impl<T> RpcServer<T> {
             todo!("Read was too short. Giving up");
         }
 
-        let mut message = RpcMessage::default();
-        if let Err(e) = message.deserialize(&mut buf) {
-            debug!("Error deserializing message: {e}");
-            todo!("Return an error for invalid message");
-        }
-
-        // The client better have sent a "call" message:
-        let RpcMessageBody::Call(call) = message.body else {
-            debug!("Received a REPLY message, expected CALL");
-            todo!("Handle this");
+        let call = match decode_call(buf) {
+            Ok(call) => call,
+            Err(e) => {
+                debug!("Protocol error in decoding call: {e}");
+                todo!();
+            }
         };
 
         eprintln!("{call:?}");
@@ -206,23 +202,24 @@ impl<T> RpcServer<T> {
             todo!("Handle this");
         };
 
-        if call.proc == 0 {
+        let procedure_number = call.get_procedure();
+        if procedure_number == 0 {
             todo!("Implement null procedure");
         }
 
-        if call.proc as usize > map.procedures.len() - 1 {
-            debug!("CALL for unknown procedure {}", call.proc);
+        if procedure_number as usize > map.procedures.len() - 1 {
+            debug!("CALL for unknown procedure {}", procedure_number);
             todo!("handle this");
         }
 
-        let Some(procedure) = map.procedures[call.proc as usize] else {
-            debug!("CALL for unimplemented procedure {}", call.proc);
+        let Some(procedure) = map.procedures[procedure_number as usize] else {
+            debug!("CALL for unimplemented procedure {}", procedure_number);
             todo!("handle this");
         };
 
-        let res = procedure(&call, buf, &mut self.user_state);
+        let res = procedure(&call, &mut self.user_state);
 
-        self.process_user_result(res, message.xid, conn_fd);
+        self.process_user_result(res, call.xid, conn_fd);
 
         // SAFETY: the buffer being resubmitted was just taken at the beginning of this function,
         // and has not been re-submitted before this call.

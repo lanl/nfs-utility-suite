@@ -82,7 +82,7 @@ impl fmt::Display for ProtocolError {
             "{}",
             match self {
                 Self::Decode => "Error decoding",
-                Self::MessageFragment => "Recieved a fragmented message",
+                Self::MessageFragment => "Received a fragmented message",
                 Self::UnsupportedAuth => "Unsupported authorization mechanism",
                 Self::WrongRpcVersion => "Only RPC Protocol version 2 is supported",
             }
