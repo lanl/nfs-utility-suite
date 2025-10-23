@@ -3,7 +3,7 @@
 
 use std::net::TcpListener;
 
-use rpc_protocol::{rpcbind, server::*, CallBody};
+use rpc_protocol::{rpcbind, server::*, Call};
 
 use nfs3::{mount_proto::procedures::*, mount_proto::*};
 
@@ -62,7 +62,7 @@ fn main() {
     let _ = handle.join();
 }
 
-fn export(_call: &CallBody, _arg: &[u8], state: &mut MountState) -> RpcResult {
+fn export(_call: &Call, state: &mut MountState) -> RpcResult {
     RpcResult::Success(state.exports.serialize_alloc())
 }
 

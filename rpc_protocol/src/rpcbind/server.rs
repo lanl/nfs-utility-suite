@@ -39,8 +39,9 @@ pub fn main(addr: RpcbindServerAddress) {
 /// Implementation of the getaddr RPC. This loops over the `service_list` to see if the service
 /// requested in the `arg` is in the list, and returns its address if so. Otherwise, it returns an
 /// empty string.
-fn getaddr(_call: &CallBody, mut arg: &[u8], service_list: &mut rpcbind::RpcbindList) -> RpcResult {
+fn getaddr(call: &Call, service_list: &mut rpcbind::RpcbindList) -> RpcResult {
     let mut requested = rpcbind::RpcService::default();
+    let mut arg = call.arg;
     rpcbind::RpcService::deserialize(&mut requested, &mut arg).unwrap();
     debug!("GETADDR Call: {requested:?}");
 
@@ -61,9 +62,9 @@ fn getaddr(_call: &CallBody, mut arg: &[u8], service_list: &mut rpcbind::Rpcbind
 }
 
 /// Implementation of the set RPC. This adds a service to the list.
-fn set(_call: &CallBody, arg: &[u8], service_list: &mut rpcbind::RpcbindList) -> RpcResult {
+fn set(call: &Call, service_list: &mut rpcbind::RpcbindList) -> RpcResult {
     let mut new_service = rpcbind::RpcService::default();
-    let mut arg = arg;
+    let mut arg = call.arg;
     if let Err(_) = new_service.deserialize(&mut arg) {
         return RpcResult::GarbageArgs;
     }
@@ -89,7 +90,7 @@ fn set(_call: &CallBody, arg: &[u8], service_list: &mut rpcbind::RpcbindList) ->
 }
 
 /// Implementation of the dump RPC. This returns the entire known `service_list`.
-fn dump(_call: &CallBody, _arg: &[u8], service_list: &mut rpcbind::RpcbindList) -> RpcResult {
+fn dump(_call: &Call, service_list: &mut rpcbind::RpcbindList) -> RpcResult {
     let data = service_list.serialize_alloc();
 
     RpcResult::Success(data)
