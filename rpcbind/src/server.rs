@@ -9,8 +9,8 @@ use std::ffi::OsString;
 use std::net::TcpListener;
 use std::os::unix::net::UnixListener;
 
-use crate::rpcbind::{self, procedures::*, RpcbindServerAddress};
-use crate::server::*;
+use crate::{procedures::*, RpcbindServerAddress};
+use rpc_protocol::{Call, server::*};
 use crate::*;
 
 pub fn main(addr: RpcbindServerAddress) {

@@ -1,6 +1,7 @@
 fn main() {
     xdr_codegen::Compiler::new()
-        .file("rpc_prot.x")
+        .file("rpcbind.x")
         .run()
         .expect("That should have worked. :(");
 }
+
