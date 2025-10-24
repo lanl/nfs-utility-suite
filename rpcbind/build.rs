@@ -4,4 +4,3 @@ fn main() {
         .run()
         .expect("That should have worked. :(");
 }
-

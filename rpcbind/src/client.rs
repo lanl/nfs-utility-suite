@@ -9,11 +9,8 @@ use std::{
     os::unix::net::UnixStream,
 };
 
-use rpc_protocol::{*, client::do_rpc_call};
-use crate::{
-    procedures::*, RpcbindServerAddress,
-    *,
-};
+use crate::{procedures::*, RpcbindServerAddress, *};
+use rpc_protocol::{client::do_rpc_call, *};
 
 /// Try to call the SET RPC for the RPCBIND server listening at `address`, to add `new_service` to
 /// its service list.
