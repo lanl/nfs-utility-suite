@@ -36,7 +36,7 @@ pub fn do_rpc_call<S: Read + Write>(
     buf.append(&mut message.serialize_alloc());
     buf.extend_from_slice(arg);
 
-    crate::update_record_mark(&mut buf);
+    update_record_mark(&mut buf);
 
     if let Err(e) = stream.write_all(&buf) {
         return Err(Error::Io(e));
