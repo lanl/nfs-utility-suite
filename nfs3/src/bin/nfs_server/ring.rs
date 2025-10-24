@@ -157,13 +157,10 @@ impl<T> RpcServer<T> {
     /// procedure implementation.
     ///
     /// Otherwise, returns an error.
-    fn handle_received_bytes(&mut self, buffer_id: u16, amount: i32, conn_fd: i32) {
+    fn handle_received_bytes(&mut self, buf: &[u8], amount: i32, conn_fd: i32) {
         assert!(amount > 0);
 
-        // SAFETY: the buffer_id was just gotten from a completion.
-        let orig_buf = unsafe { self.buffer_map.take_buf(buffer_id) };
-
-        let mut buf = &orig_buf[..amount as usize];
+        let mut buf = &buf[..amount as usize];
 
         if buf.len() < 4 {
             // TODO: eventually, this should either try to recv more data, or just submit a
@@ -218,12 +215,6 @@ impl<T> RpcServer<T> {
         let res = procedure(&call, &mut self.user_state);
 
         self.process_user_result(res, call.get_xid(), conn_fd);
-
-        // SAFETY: the buffer being resubmitted was just taken at the beginning of this function,
-        // and has not been re-submitted before this call.
-        unsafe {
-            self.buffer_map.resubmit_buf(orig_buf, buffer_id);
-        }
     }
 
     fn process_user_result(&mut self, res: RingResult, xid: u32, conn_fd: i32) {
@@ -358,7 +349,16 @@ impl Operation {
                 let buffer_id: u16 = cqueue::buffer_select(cqe.flags())
                     .expect("Buffer ID should be set on a multishot receive");
 
-                server.handle_received_bytes(buffer_id, amount, conn_fd);
+                // SAFETY: the buffer_id was just received from a completion.
+                let buf = unsafe { server.buffer_map.take_buf(buffer_id) };
+
+                server.handle_received_bytes(&buf, amount, conn_fd);
+
+                // SAFETY: the buffer being resubmitted was just taken above,
+                // and has not been re-submitted before this call.
+                unsafe {
+                    server.buffer_map.resubmit_buf(buf, buffer_id);
+                }
             }
         }
 
@@ -469,7 +469,7 @@ impl BufferMap {
         let num_entries = 1024;
         let buf_size = 4096;
 
-        assert!(num_entries < u16::MAX);
+        assert!(num_entries < u16::MAX); // top bit must not be set
         assert!(num_entries & (num_entries - 1) == 0); // must be a power of 2
 
         let len = (num_entries as usize) * std::mem::size_of::<types::BufRingEntry>();
@@ -555,13 +555,6 @@ impl BufferMap {
     /// result in a data race with the kernel writing to that buffer.
     pub unsafe fn take_buf(&mut self, id: u16) -> Box<[u8]> {
         std::mem::take(&mut self.buffers[id as usize])
-    }
-
-    /// SAFETY:
-    ///
-    /// Has the same requirements as take_buf()
-    pub unsafe fn borrow_buf(&self, id: u16) -> &[u8] {
-        &self.buffers[id as usize]
     }
 
     /// SAFETY:
