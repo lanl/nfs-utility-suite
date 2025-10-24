@@ -9,9 +9,9 @@ use std::ffi::OsString;
 use std::net::TcpListener;
 use std::os::unix::net::UnixListener;
 
-use crate::{procedures::*, RpcbindServerAddress};
-use rpc_protocol::{Call, server::*};
 use crate::*;
+use crate::{procedures::*, RpcbindServerAddress};
+use rpc_protocol::{server::*, Call};
 
 pub fn main(addr: RpcbindServerAddress) {
     let service_list = default_service_list();
