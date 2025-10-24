@@ -5,7 +5,7 @@ pub mod client;
 pub mod server;
 
 include!(concat!(env!("OUT_DIR"), "/rpcbind.rs"));
-pub use rpcbind::*;
+pub use self::rpcbind::*;
 
 /// An RPCBIND Server tends to listen both on a Unix socket and a TCP socket.
 pub enum RpcbindServerAddress {

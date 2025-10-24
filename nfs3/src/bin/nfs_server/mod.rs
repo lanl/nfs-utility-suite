@@ -3,9 +3,13 @@
 
 use clap::Parser;
 
-use rpc_protocol::{server::ring::*, server::RpcResult, CallBody};
+use rpc_protocol::{server::RpcResult, Call};
 
 use ::nfs3::nfs3_xdr::{procedures::*, *};
+
+mod ring;
+
+use crate::ring::*;
 
 #[derive(Parser)]
 struct Cli {
@@ -32,7 +36,8 @@ fn main() {
     server.main_loop().unwrap();
 }
 
-fn getattr(_call: &CallBody, arg: &[u8], _state: &mut ServerState) -> RingResult {
+fn getattr(call: &Call, _state: &mut ServerState) -> RingResult {
+    let arg = call.arg;
     eprintln!("in getattr impl: {arg:?}");
 
     let obj_attributes = FileAttributes::default();

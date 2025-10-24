@@ -3,7 +3,7 @@
 
 #![allow(non_camel_case_types)]
 
-use rpc_protocol::rpcbind::{self, RpcbindServerAddress};
+use rpcbind::{self, RpcbindServerAddress};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();

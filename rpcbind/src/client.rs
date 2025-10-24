@@ -9,18 +9,15 @@ use std::{
     os::unix::net::UnixStream,
 };
 
-use crate::{
-    client::*,
-    rpcbind::{self, procedures::*, RpcbindServerAddress},
-    *,
-};
+use crate::{procedures::*, RpcbindServerAddress, *};
+use rpc_protocol::{client::do_rpc_call, *};
 
 /// Try to call the SET RPC for the RPCBIND server listening at `address`, to add `new_service` to
 /// its service list.
 pub fn set(
     new_service: rpcbind::RpcService,
     server_address: RpcbindServerAddress,
-) -> Result<bool, crate::Error> {
+) -> Result<bool, rpc_protocol::Error> {
     debug!("performing RPCBIND Set call");
 
     match server_address {
@@ -38,7 +35,7 @@ pub fn set(
 pub fn set_using_stream<S: Read + Write>(
     new_service: rpcbind::RpcService,
     stream: &mut S,
-) -> Result<bool, crate::Error> {
+) -> Result<bool, rpc_protocol::Error> {
     let arg = new_service.serialize_alloc();
 
     let res = do_rpc_call(
@@ -58,7 +55,7 @@ pub fn set_using_stream<S: Read + Write>(
 pub fn getaddr_using_stream<S: Read + Write>(
     service: rpcbind::RpcService,
     stream: &mut S,
-) -> Result<std::ffi::OsString, crate::Error> {
+) -> Result<std::ffi::OsString, rpc_protocol::Error> {
     let arg = service.serialize_alloc();
 
     let res = do_rpc_call(

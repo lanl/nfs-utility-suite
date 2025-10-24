@@ -2,8 +2,9 @@
 // Copyright 2025. Triad National Security, LLC.
 
 pub mod client;
-pub mod rpcbind;
 pub mod server;
+
+use log::*;
 
 use std::{
     fmt,
@@ -80,12 +81,92 @@ impl fmt::Display for ProtocolError {
             "{}",
             match self {
                 Self::Decode => "Error decoding",
-                Self::MessageFragment => "Recieved a fragmented message",
+                Self::MessageFragment => "Received a fragmented message",
                 Self::UnsupportedAuth => "Unsupported authorization mechanism",
                 Self::WrongRpcVersion => "Only RPC Protocol version 2 is supported",
             }
         )
     }
+}
+
+/// A `call` holds the data needed to respond to an RPC call.
+#[derive(Debug)]
+pub struct Call<'a> {
+    xid: u32,
+    inner: CallBody,
+
+    /// The call's encoded argument.
+    pub arg: &'a [u8],
+}
+
+impl Call<'_> {
+    /// Transaction ID of this call.
+    pub fn get_xid(&self) -> u32 {
+        self.xid
+    }
+
+    /// Program number, e.g., 10005 for NFS v3.
+    pub fn get_program(&self) -> u32 {
+        self.inner.prog
+    }
+
+    /// Version number, e.g., 3 for NFS v3.
+    pub fn get_version(&self) -> u32 {
+        self.inner.vers
+    }
+
+    /// Procedure number, e.g., 1 for GETATTR in NFS v3.
+    pub fn get_procedure(&self) -> u32 {
+        self.inner.proc
+    }
+
+    /// Credential
+    pub fn get_credential(&self) -> &OpaqueAuth {
+        &self.inner.cred
+    }
+}
+
+/// Given an encoded RPC call in `data` (including both the call header and the encoded arguments),
+/// tries to decode the call and returns either:
+///
+///   - Ok(_): the succesfully decoded call and a slice containing the argument
+///   - Err(_): an error that occurred while trying to decode the call
+///
+/// The caller is expected to provide a complete RPC call record without the record mark prefix (if
+/// present). If the caller is using a transport layer that uses record marking, like TCP, the
+/// caller must handle decoding the record mark and reading a cmplete record. Passing a record that
+/// is too short is returned as a decoding error.
+pub fn decode_call(data: &[u8]) -> Result<Call<'_>, ProtocolError> {
+    let mut message = RpcMessage::default();
+    let mut rest = data;
+
+    if let Err(e) = message.deserialize(&mut rest) {
+        warn!("Error deserializing message: {e}");
+        todo!();
+    }
+
+    let RpcMessageBody::Call(call) = message.body else {
+        return Err(ProtocolError::Decode);
+    };
+
+    debug!(
+        "recieved CALL for program {}, version {}, procedure {}, argument length {} bytes",
+        call.prog,
+        call.vers,
+        call.proc,
+        rest.len(),
+    );
+
+    if call.rpcvers != RPC_VERSION {
+        debug!("CALL with unexpected RPC version: {}", call.rpcvers);
+        return Err(ProtocolError::WrongRpcVersion);
+    };
+
+    Ok(Call {
+        xid: message.xid,
+        inner: call,
+        arg: rest,
+    })
 }
 
 /// Given a buffer that contains an encoded message, prefaced by a dummy record mark, update that
@@ -116,7 +197,7 @@ fn stream_record_mark<S: Read>(stream: &mut S) -> Result<u32, crate::Error> {
 /// implementation does not yet support record fragments.
 ///
 /// Unlike the `stream_` variant, this can't return an I/O error.
-fn decode_record_mark(mark: &[u8; 4]) -> Result<u32, crate::Error> {
+pub fn decode_record_mark(mark: &[u8; 4]) -> Result<u32, crate::Error> {
     let record_mark = u32::from_be_bytes(*mark);
 
     if (record_mark & (1 << 31)) == 0 {
