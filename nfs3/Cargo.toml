@@ -26,6 +26,7 @@ path = "src/bin/nfs_cli.rs"
 [dependencies]
 clap = { version = "4.5.31", features = ["derive"] }
 env_logger = "0.11.8"
+rpcbind = { path = "../rpcbind" }
 rpc_protocol = { path = "../rpc_protocol" }
 log = "0.4.27"
 libc = "0.2"

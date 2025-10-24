@@ -3,7 +3,7 @@
 
 use std::net::TcpListener;
 
-use rpc_protocol::{rpcbind, server::*, Call};
+use rpc_protocol::{server::*, Call};
 
 use nfs3::{mount_proto::procedures::*, mount_proto::*};
 
