@@ -5,6 +5,7 @@ use log::*;
 
 use crate::*;
 
+#[cfg(target_os = "linux")]
 pub mod ring;
 
 /// An RPC Procedure implementation takes a reference to the call body for the request (mainly

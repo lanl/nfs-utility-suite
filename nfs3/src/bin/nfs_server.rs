@@ -1,20 +1,24 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright 2025. Triad National Security, LLC.
 
-use clap::Parser;
+#[cfg(target_os = "linux")]
+use {
+    clap::Parser,
+    nfs3::nfs3_xdr::{procedures::*, *},
+    rpc_protocol::{server::ring::*, server::RpcResult, CallBody},
+};
 
-use rpc_protocol::{server::ring::*, server::RpcResult, CallBody};
-
-use ::nfs3::nfs3_xdr::{procedures::*, *};
-
+#[cfg(target_os = "linux")]
 #[derive(Parser)]
 struct Cli {
     #[arg(long, default_value_t = 2049)]
     port: u16,
 }
 
+#[cfg(target_os = "linux")]
 struct ServerState {}
 
+#[cfg(target_os = "linux")]
 fn main() {
     env_logger::init();
 
@@ -32,6 +36,7 @@ fn main() {
     server.main_loop().unwrap();
 }
 
+#[cfg(target_os = "linux")]
 fn getattr(_call: &CallBody, arg: &[u8], _state: &mut ServerState) -> RingResult {
     eprintln!("in getattr impl: {arg:?}");
 
@@ -40,4 +45,9 @@ fn getattr(_call: &CallBody, arg: &[u8], _state: &mut ServerState) -> RingResult
     let result = GetAttrResult::Ok(GetAttrSuccess { obj_attributes });
 
     RingResult::Done(RpcResult::Success(result.serialize_alloc()))
+}
+
+#[cfg(not(target_os = "linux"))]
+fn main() {
+    eprintln!("nfs server only supported on linux.");
 }
