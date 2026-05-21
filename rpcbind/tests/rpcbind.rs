@@ -3,8 +3,6 @@
 
 use std::os::unix::net::UnixStream;
 
-use rpc_protocol::*;
-
 use rpcbind::RpcbindServerAddress;
 
 #[test]
