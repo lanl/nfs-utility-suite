@@ -2,8 +2,6 @@ typedef unsigned hyper uint64;
 typedef hyper int64;
 typedef unsigned long uint32;
 typedef long int32;
-typedef string FileName<>;
-typedef string NfsPath<>;
 typedef uint64 FileId;
 typedef uint64 Cookie;
 typedef opaque CookieVerf[NFS3_COOKIEVERFSIZE];
