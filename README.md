@@ -42,7 +42,7 @@ pub struct File {
 }
 impl File {
     pub fn serialize_alloc(&self) -> Vec<u8>;
-    pub fn deserialize(&mut self, mut input: &mut &[u8]) -> Result<(), helpers::DeserializeError>;
+    pub fn deserialize(&mut self, input: &mut &[u8]) -> Result<(), helpers::DeserializeError>;
 }
 ```
 
