@@ -120,8 +120,7 @@ impl<'src> Scanner<'src> {
                 // Positive decimal number:
                 ch if ch.is_numeric() => {
                     self.start = i;
-                    let num = self.number(10);
-                    num
+                    self.number(10)
                 }
                 ch if ch.is_alphabetic() => {
                     self.start = i;
@@ -140,19 +139,14 @@ impl<'src> Scanner<'src> {
 
     fn keyword_or_identifier(&mut self) -> TokenKind {
         self.current = self.start;
-        loop {
-            match self.chars.peek() {
-                Some((_, ch)) => {
-                    match ch {
-                        '_' => {}
-                        ch if ch.is_alphanumeric() => {}
-                        _ => break,
-                    };
-                    self.current += 1;
-                    self.chars.next();
-                }
+        while let Some((_, ch)) = self.chars.peek() {
+            match ch {
+                '_' => {}
+                ch if ch.is_alphanumeric() => {}
                 _ => break,
-            }
+            };
+            self.current += 1;
+            self.chars.next();
         }
         self.current += 1;
         let id = &self.source[self.start..self.current];
@@ -210,7 +204,7 @@ impl<'src> Scanner<'src> {
         }
         let num = &self.source[self.start..self.current];
         let num: u64 = u64::from_str_radix(num, radix)
-            .expect(&format!("Should be able to parse {num} as a number"));
+            .unwrap_or_else(|_| panic!("Should be able to parse {num} as a number."));
 
         TokenKind::Number(num)
     }

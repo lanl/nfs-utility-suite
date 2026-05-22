@@ -68,6 +68,7 @@ pub struct Compiler {
 }
 
 impl Compiler {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Compiler {
             source: InputSource::StdIo,
@@ -138,7 +139,7 @@ impl Compiler {
     }
 
     fn codegen(source: &str, module_name: &str, params: &codegen::Params) -> Result<String> {
-        let mut parser = Parser::new(Scanner::new(&source));
+        let mut parser = Parser::new(Scanner::new(source));
         let schema = parser.parse()?;
         let validated_schema = validate::ValidatedSchema::validate(schema)?;
         Ok(codegen::codegen(&validated_schema, module_name, params))

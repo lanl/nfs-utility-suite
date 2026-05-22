@@ -87,7 +87,7 @@ impl<'src> Parser<'src> {
             }
         }
 
-        if versions.len() == 0 {
+        if versions.is_empty() {
             Parser::error("Program definition must have at least one version.", None);
         }
 
@@ -143,7 +143,7 @@ impl<'src> Parser<'src> {
             });
         }
 
-        if procs.len() == 0 {
+        if procs.is_empty() {
             Parser::error("Version definition must have at least one procedure.", None);
         }
 
@@ -234,7 +234,7 @@ impl<'src> Parser<'src> {
             variants.push((name, value));
         }
 
-        if variants.len() == 0 {
+        if variants.is_empty() {
             Parser::error("Enum must have at least one variant", None);
         }
 
@@ -253,7 +253,7 @@ impl<'src> Parser<'src> {
             self.expect(TokenKind::Semicolon, "Expected ';' following declaration");
         }
 
-        if members.len() == 0 {
+        if members.is_empty() {
             Parser::error("Struct must have at least one member", None);
         }
 
@@ -268,11 +268,8 @@ impl<'src> Parser<'src> {
         let body = match &tok.kind {
             TokenKind::Int => todo!("don't support int unions yet"),
             TokenKind::Unsigned => {
-                match self.peek().kind {
-                    TokenKind::Int => {
-                        self.next();
-                    }
-                    _ => {}
+                if self.peek().kind == TokenKind::Int {
+                    self.next();
                 };
                 self.xdr_union_discriminant_remainder();
                 let (arms, default_arm) = self.xdr_union_enum_body();
@@ -306,7 +303,7 @@ impl<'src> Parser<'src> {
             }
             _ => Parser::error(
                 "Expected one of 'int', 'unsigned', 'enum', or an identifier to begin union",
-                Some(&tok),
+                Some(tok),
             ),
         };
 
@@ -392,7 +389,7 @@ impl<'src> Parser<'src> {
                     _ => break,
                 }
             }
-            if case_names.len() == 0 {
+            if case_names.is_empty() {
                 Parser::error("union must have at least one case per arm", None);
             }
             let decl = self.declaration();
@@ -405,7 +402,7 @@ impl<'src> Parser<'src> {
             );
         }
 
-        if cases.len() == 0 {
+        if cases.is_empty() {
             Parser::error("Enum must have at least one variant", None);
         }
 
@@ -542,7 +539,7 @@ impl<'src> Parser<'src> {
                     TokenKind::LeftBracket => self.array(name, ArrayKind::UserType(ty)),
                     TokenKind::LessThan => self.array(name, ArrayKind::UserType(ty)),
                     _ => Declaration::Named(NamedDeclaration {
-                        name: name,
+                        name,
                         kind: DeclarationKind::Scalar(ty),
                     }),
                 }

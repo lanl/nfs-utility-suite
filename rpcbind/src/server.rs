@@ -65,7 +65,7 @@ fn getaddr(call: &Call, service_list: &mut rpcbind::RpcbindList) -> RpcResult {
 fn set(call: &Call, service_list: &mut rpcbind::RpcbindList) -> RpcResult {
     let mut new_service = rpcbind::RpcService::default();
     let mut arg = call.arg;
-    if let Err(_) = new_service.deserialize(&mut arg) {
+    if new_service.deserialize(&mut arg).is_err() {
         return RpcResult::GarbageArgs;
     }
 
@@ -131,5 +131,5 @@ fn get_service(
         return Some(service);
     }
 
-    return None;
+    None
 }
