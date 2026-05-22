@@ -27,7 +27,7 @@ pub enum RingResult {
     /// ...or it may need to do I/O, which will use this thread's io_uring instance. The RpcServer
     /// will submit the Entry on behalf of the procedure implemenation, and call a user-supplied
     /// callback (TODO: implement this...) when the completion comes in.
-    MoreIo(cqueue::Entry),
+    _MoreIo(cqueue::Entry),
 }
 
 /// A mapping between RPC procedures (identified by program, version, and procedure numbers), and
@@ -223,7 +223,7 @@ impl<T> RpcServer<T> {
                 RpcResult::Success(data) => self.send_succesful_reply(xid, conn_fd, data),
                 _ => todo!(),
             },
-            RingResult::MoreIo(_) => todo!(),
+            RingResult::_MoreIo(_) => todo!(),
         }
     }
 
@@ -424,13 +424,13 @@ impl Receive {
 
 #[derive(Debug)]
 struct Send {
-    fd: i32,
+    _fd: i32,
     data: Vec<u8>,
 }
 
 impl Send {
-    fn new(fd: i32, data: Vec<u8>) -> Self {
-        Self { fd, data }
+    fn new(_fd: i32, data: Vec<u8>) -> Self {
+        Self { _fd, data }
     }
 
     fn buf_ptr(&self) -> *const u8 {
