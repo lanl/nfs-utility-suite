@@ -134,7 +134,7 @@ enum FunctionKind {
 pub fn codegen(schema: &ValidatedSchema, module_name: &str, params: &Params) -> String {
     let mut buf = CodeBuf::new();
 
-    buf.add_line("#[allow(non_camel_case_types, non_snake_case)]");
+    buf.add_line("#[allow(non_camel_case_types, non_snake_case, clippy::all)]");
     buf.code_block(&format!("pub mod {module_name}"), |buf| {
         if schema.contains_string {
             buf.add_line(USE_FFI_HEADER);
