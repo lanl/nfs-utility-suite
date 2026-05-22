@@ -352,6 +352,8 @@ Here are some relevant RFCs:
 
 ### NFS Related:
 - [RFC 1813](https://datatracker.ietf.org/doc/html/rfc1813) - NFS v3 Protocol
+- [RFC 7530](https://datatracker.ietf.org/doc/html/rfc7530) - NFS v4.0 Protocol
+  - [RFC 7531](https://datatracker.ietf.org/doc/html/rfc7531) - NFS v4.0 XDR/RPC Specification
 - [RFC 5661](https://datatracker.ietf.org/doc/html/rfc5661) - NFS v4.1 Protocol
   - [RFC 5662](https://datatracker.ietf.org/doc/html/rfc5662) - NFS v4.1 XDR/RPC Specification
 - [RFC 7862](https://datatracker.ietf.org/doc/html/rfc7862)  - NFS v4.2 Protocol
