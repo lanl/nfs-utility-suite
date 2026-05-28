@@ -129,12 +129,10 @@ impl Definition {
                     deps: Vec::new(),
                 },
             }),
-            Definition::Union(u) => {
-                match &u.body {
-                    XdrUnionBody::Bool(body) => body.validate(u, tab, size_tab),
-                    XdrUnionBody::Enum(body) => body.validate(u, tab, size_tab),
-                }
-            }
+            Definition::Union(u) => match &u.body {
+                XdrUnionBody::Bool(body) => body.validate(u, tab, size_tab),
+                XdrUnionBody::Enum(body) => body.validate(u, tab, size_tab),
+            },
         };
 
         Ok(ret)
@@ -312,41 +310,30 @@ impl XdrUnionBoolBody {
     fn validate(
         &self,
         u: &XdrUnion,
-        tab: &SymbolTable,
-        size_tab: &HashMap<String, DefinitionSize>,
+        _tab: &SymbolTable,
+        _size_tab: &HashMap<String, DefinitionSize>,
     ) -> ValidatedDefinition {
-        let true_size = self.true_arm.size(tab, size_tab);
-        let false_size = self.false_arm.size(tab, size_tab);
+        let arm_names: Vec<String> = [self.true_arm.name(), self.false_arm.name()]
+            .iter()
+            .filter_map(|val| *val)
+            .map(|val| val.to_string())
+            .collect();
 
-        let (known, deps) = if true_size.is_some() && true_size == false_size {
-            (true_size.unwrap(), Vec::new())
-        } else {
-            let arm_names: Vec<String> = [self.true_arm.name(), self.false_arm.name()]
-                .iter()
-                .filter_map(|val| *val)
-                .map(|val| val.to_string())
-                .collect();
-
-            if arm_names.is_empty() {
-                panic!("both boolean arms for {} are unamed, which is weird, because the two arm sizes should have evaluated to equal eachother and never reached this case", u.name)
-            }
-
-            (0, arm_names)
-        };
-
+        // bool union body size is never known as there is always a void member and a non void
+        // member
         ValidatedDefinition::Union(ValidatedUnion {
             name: u.name.clone(),
             body: ValidatedUnionBody::Bool(ValidatedUnionBoolBody {
                 true_arm: self.true_arm.clone(),
                 false_arm: self.false_arm.clone(),
                 size: DefinitionSize {
-                    known,
-                    deps: deps.clone(),
+                    known: 0,
+                    deps: arm_names.clone(),
                 },
             }),
             size: DefinitionSize {
-                known: 4 + known,
-                deps: deps.clone(),
+                known: 4,
+                deps: arm_names,
             },
         })
     }
@@ -409,8 +396,13 @@ impl XdrUnionEnumBody {
 
         // if all the enum cases are covered by the match arms, we can elide the
         // default case
-        let size = if self.default_arm.is_some() && !left.is_empty() {
-            let default_arm = self.default_arm.as_ref().unwrap();
+        let default_arm = if !left.is_empty() {
+            self.default_arm.as_ref()
+        } else {
+            None
+        };
+
+        let size = if let Some(default_arm) = default_arm {
             let default_size = default_arm.size(tab, size_tab);
             if default_size.is_none()
                 || arms_iter.all(|(_, d)| d.size(tab, size_tab) == default_size)
