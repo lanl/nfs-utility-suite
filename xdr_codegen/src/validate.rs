@@ -41,9 +41,42 @@ impl ValidatedSchema {
                         known: 4,
                         deps: Vec::new(),
                     },
-                    ValidatedDefinition::TypeDef(xdr_type_def) => {
-                        todo!("we currently don't support typedefs here")
-                    }
+                    ValidatedDefinition::TypeDef(xdr_type_def) => match &xdr_type_def.decl {
+                        Declaration::Named(named_declaration) => match &named_declaration.kind {
+                            DeclarationKind::Scalar(xdr_type) => {
+                                if let Some(size) = xdr_type.size(&size_tab) {
+                                    DefinitionSize {
+                                        known: size,
+                                        deps: Vec::new(),
+                                    }
+                                } else {
+                                    DefinitionSize {
+                                        known: 0,
+                                        deps: vec![named_declaration.name.clone()],
+                                    }
+                                }
+                            }
+                            DeclarationKind::Array(array) => {
+                                let arr_size = array.size(&symbol_table, &size_tab);
+                                if let Some(arr_size) = arr_size {
+                                    DefinitionSize {
+                                        known: arr_size,
+                                        deps: Vec::new(),
+                                    }
+                                } else {
+                                    DefinitionSize {
+                                        known: 0,
+                                        deps: vec![named_declaration.name.clone()],
+                                    }
+                                }
+                            }
+                            DeclarationKind::Optional(xdr_type) => DefinitionSize {
+                                known: 0,
+                                deps: vec![named_declaration.name.clone()],
+                            },
+                        },
+                        Declaration::Void => panic!("encountered null typedef"),
+                    },
                     ValidatedDefinition::Struct(validated_struct) => validated_struct.size.clone(),
                     ValidatedDefinition::Enum(validated_enum) => DefinitionSize {
                         known: 4,
@@ -284,6 +317,46 @@ impl XdrType {
     }
 }
 
+impl Array {
+    fn size(&self, tab: &SymbolTable, size_tab: &HashMap<String, DefinitionSize>) -> Option<usize> {
+        match &self.size {
+            ArraySize::Fixed(value) => {
+                let count = match value {
+                    Value::Int(val) => val.clone() as usize,
+                    Value::Name(name) => {
+                        if let Ok(constval) = tab.lookup_definition(name) {
+                            if let Definition::Const(constval) = &*constval {
+                                if let Value::Int(intval) = constval.value {
+                                    intval as usize
+                                } else {
+                                    panic!("constant \"{name}\" passed to array is not immediately an integer");
+                                }
+                            } else {
+                                panic!("definition for value passed as array length specifier \"{name}\" is not a constant");
+                            }
+                        } else {
+                            panic!("could not find definition for constant of name \"{name}\"");
+                        }
+                    }
+                };
+
+                let single_width = match &self.kind {
+                    ArrayKind::Byte | ArrayKind::Ascii => Some(1 as usize),
+                    ArrayKind::UserType(xdr_type) => xdr_type.size(size_tab),
+                };
+
+                if let Some(single_width) = single_width {
+                    // Align to closest >= 4 byte multiple
+                    Some((single_width * count + 3) & !(0b11 as usize))
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+}
+
 impl Declaration {
     fn name(&self) -> Option<&str> {
         match self {
@@ -296,43 +369,7 @@ impl Declaration {
         if let Declaration::Named(m) = self {
             match &m.kind {
                 DeclarationKind::Scalar(xdr_type) => xdr_type.size(size_tab),
-                DeclarationKind::Array(array) => {
-                    match &array.size {
-                        ArraySize::Fixed(value) => {
-                            let count = match value {
-                                Value::Int(val) => val.clone() as usize,
-                                Value::Name(name) => {
-                                    if let Ok(constval) = tab.lookup_definition(name) {
-                                        if let Definition::Const(constval) = &*constval {
-                                            if let Value::Int(intval) = constval.value {
-                                                intval as usize
-                                            } else {
-                                                panic!("constant \"{name}\" passed to array is not immediately an integer");
-                                            }
-                                        } else {
-                                            panic!("definition for value passed as array length specifier \"{name}\" is not a constant");
-                                        }
-                                    } else {
-                                        panic!("could not find definition for constant of name \"{name}\"");
-                                    }
-                                }
-                            };
-
-                            let single_width = match &array.kind {
-                                ArrayKind::Byte | ArrayKind::Ascii => Some(1 as usize),
-                                ArrayKind::UserType(xdr_type) => xdr_type.size(size_tab),
-                            };
-
-                            if let Some(single_width) = single_width {
-                                // Align to closest >= 4 byte multiple
-                                Some((single_width * count + 3) & !(0b11 as usize))
-                            } else {
-                                None
-                            }
-                        }
-                        _ => None,
-                    }
-                }
+                DeclarationKind::Array(array) => array.size(tab, size_tab),
                 DeclarationKind::Optional(_) => None,
             }
         } else {
