@@ -113,7 +113,7 @@ impl Definition {
     ) -> crate::Result<ValidatedDefinition> {
         let ret = match self {
             Definition::Const(cdef) => match cdef.value {
-                Value::Int(_) => ValidatedDefinition::Const(ValidatedConstDefinition {
+                Value::Int(_) => ValidatedDefinition::Const(ConstDefinition {
                     name: cdef.name.clone(),
                     value: cdef.value.clone(),
                 }),
@@ -127,7 +127,7 @@ impl Definition {
             Definition::TypeDef(td) => {
                 let td_size = td.decl.size(tab, size_tab);
 
-                ValidatedDefinition::TypeDef(ValidatedTypeDef {
+                ValidatedDefinition::TypeDef(XdrTypeDef {
                     decl: td.decl.clone(),
                 })
             }

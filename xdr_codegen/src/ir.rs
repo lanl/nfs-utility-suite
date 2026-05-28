@@ -21,16 +21,12 @@ impl DefinitionSize {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ValidatedDefinition {
-    Const(ValidatedConstDefinition),
-    TypeDef(ValidatedTypeDef),
+    Const(ConstDefinition),
+    TypeDef(XdrTypeDef),
     Struct(ValidatedStruct),
     Enum(ValidatedEnum),
     Union(ValidatedUnion),
 }
-
-pub type ValidatedConstDefinition = ConstDefinition;
-
-pub type ValidatedTypeDef = XdrTypeDef;
 
 /// For strings that are not used for their own value, but to resolve to another type.
 pub type UnresolvedName = String;
