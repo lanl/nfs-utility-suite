@@ -100,7 +100,7 @@ impl ValidatedSchema {
 
 impl Definition {
     fn validate(
-        &mut self,
+        &self,
         tab: &SymbolTable,
         size_tab: &HashMap<String, DefinitionSize>,
     ) -> crate::Result<ValidatedDefinition> {
@@ -236,7 +236,7 @@ impl HasName for ValidatedDefinition {
 
 impl XdrStruct {
     fn validate(
-        &mut self,
+        &self,
         tab: &SymbolTable,
         size_tab: &HashMap<String, DefinitionSize>,
     ) -> crate::Result<ValidatedStruct> {
@@ -291,7 +291,7 @@ impl XdrStruct {
     /// the struct. If such a member occurred in the middle of a struct, it would complicate
     /// correct [de]seriailizing, but I've never seen such a struct in an actual protocol
     /// definition, so simply don't allow it.
-    fn self_referential_optional(&mut self, tab: &SymbolTable) -> crate::Result<bool> {
+    fn self_referential_optional(&self, tab: &SymbolTable) -> crate::Result<bool> {
         let mut self_referential_optional = false;
         for member in self.members.iter() {
             if self_referential_optional {
