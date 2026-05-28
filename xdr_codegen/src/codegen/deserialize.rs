@@ -165,10 +165,6 @@ impl XdrStruct {
             "pub fn deserialize(&mut self, input: &mut &[u8]) -> Result<(), helpers::DeserializeError>",
             |buf| {
                 for decl in self.members.iter() {
-                    let Declaration::Named(decl) = decl else {
-                        buf.add_line("// void");
-                        continue;
-                    };
                     buf.add_line(&format!("// {}:", decl.name));
                     decl.deserialize_inline(None, buf, tab);
                 }
