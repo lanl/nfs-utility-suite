@@ -35,3 +35,8 @@ struct ManyInts {
 	int second<7>;
 	hyper third<>;
 };
+
+struct ConstSizeArray {
+    opaque bytes[AMOUNT];
+    int ints[AMOUNT];
+};

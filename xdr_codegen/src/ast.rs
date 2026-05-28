@@ -48,13 +48,13 @@ pub enum Definition {
     Union(XdrUnion),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ConstDefinition {
     pub name: String,
     pub value: Value,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct XdrTypeDef {
     pub decl: Declaration,
 }
@@ -187,4 +187,19 @@ pub enum DeclarationKind {
     Scalar(XdrType),
     Array(Array),
     Optional(XdrType),
+}
+
+impl Definition {
+    pub fn get_name(&self) -> Option<&str> {
+        match self {
+            Definition::Const(d) => Some(&d.name),
+            Definition::TypeDef(d) => match &d.decl {
+                Declaration::Named(n) => Some(&n.name),
+                Declaration::Void => None,
+            },
+            Definition::Struct(d) => Some(&d.name),
+            Definition::Enum(d) => Some(&d.name),
+            Definition::Union(d) => Some(&d.name),
+        }
+    }
 }

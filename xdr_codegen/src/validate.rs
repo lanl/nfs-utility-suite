@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright 2025. Triad National Security, LLC.
 
-use crate::{ast::*, symbol_table::*, XdrError};
+use std::collections::{HashMap, HashSet};
+
+use crate::{ast::*, ir::*, symbol_table::*, XdrError};
 
 pub struct ValidatedSchema {
     /// This owns the definitions of the... definitions.
@@ -23,8 +25,42 @@ impl ValidatedSchema {
     pub fn validate(schema: Schema) -> crate::Result<ValidatedSchema> {
         let (symbol_table, definition_list) = SymbolTable::new(&schema);
 
-        for (_, definition) in symbol_table.tab.iter() {
-            definition.borrow_mut().validate(&symbol_table)?;
+        let mut size_tab: HashMap<String, DefinitionSize> = HashMap::new();
+        println!("processing order:");
+        for definition_name in definition_list.iter() {
+            println!("\t{}", definition_name);
+        }
+        println!();
+
+        for definition_name in definition_list.iter() {
+            println!("processing {}", definition_name);
+            if let Some(definition) = symbol_table.tab.get(definition_name) {
+                let res = definition.borrow_mut().validate(&symbol_table, &size_tab)?;
+                let size = match &res {
+                    ValidatedDefinition::Const(_) => DefinitionSize {
+                        known: 4,
+                        deps: Vec::new(),
+                    },
+                    ValidatedDefinition::TypeDef(xdr_type_def) => {
+                        todo!("we currently don't support typedefs here")
+                    }
+                    ValidatedDefinition::Struct(validated_struct) => validated_struct.size.clone(),
+                    ValidatedDefinition::Enum(validated_enum) => DefinitionSize {
+                        known: 4,
+                        deps: Vec::new(),
+                    },
+                    ValidatedDefinition::Union(validated_union) => validated_union.size.clone(),
+                };
+
+                println!(
+                    "sizeof({}) = {}:{}",
+                    definition_name,
+                    size.known,
+                    size.is_determinate()
+                );
+
+                size_tab.insert(definition_name.to_string(), size.clone());
+            }
         }
 
         Ok(ValidatedSchema {
@@ -37,22 +73,320 @@ impl ValidatedSchema {
 }
 
 impl Definition {
-    fn validate(&mut self, tab: &SymbolTable) -> crate::Result<()> {
-        match self {
-            Definition::Const(_) => {}
-            Definition::TypeDef(_) => {}
-            Definition::Struct(s) => s.validate(tab)?,
-            Definition::Enum(_) => {}
-            Definition::Union(_) => {}
+    fn validate(
+        &mut self,
+        tab: &SymbolTable,
+        size_tab: &HashMap<String, DefinitionSize>,
+    ) -> crate::Result<ValidatedDefinition> {
+        let ret = match self {
+            Definition::Const(cdef) => match cdef.value {
+                Value::Int(_) => ValidatedDefinition::Const(ValidatedConstDefinition {
+                    name: cdef.name.clone(),
+                    value: cdef.value.clone(),
+                }),
+                Value::Name(_) => {
+                    panic!(
+                        "constant \"{}\" is invalid: constants must be integers",
+                        cdef.name
+                    )
+                }
+            },
+            Definition::TypeDef(td) => {
+                let td_size = td.decl.size(tab, size_tab);
+
+                ValidatedDefinition::TypeDef(ValidatedTypeDef {
+                    decl: td.decl.clone(),
+                })
+            }
+            Definition::Struct(s) => ValidatedDefinition::Struct(s.validate(tab, &size_tab)?),
+            Definition::Enum(e) => ValidatedDefinition::Enum(ValidatedEnum {
+                name: e.name.clone(),
+                variants: e.variants.clone(),
+                size: DefinitionSize {
+                    known: 4,
+                    deps: Vec::new(),
+                },
+            }),
+            Definition::Union(u) => {
+                match &u.body {
+                    XdrUnionBody::Bool(body) => {
+                        let true_size = body.true_arm.size(tab, size_tab);
+                        let false_size = body.false_arm.size(tab, size_tab);
+
+                        let (known, deps) = if true_size != None && true_size == false_size {
+                            (true_size.unwrap(), Vec::new())
+                        } else {
+                            let arm_names: Vec<String> =
+                                [body.true_arm.name(), body.false_arm.name()]
+                                    .iter()
+                                    .filter_map(|val| val.clone())
+                                    .map(|val| val.to_string())
+                                    .collect();
+
+                            if arm_names.is_empty() {
+                                panic!("both boolean arms for {} are unamed, which is weird, because the two arm sizes should have evaluated to equal eachother and never reached this case", u.name)
+                            }
+
+                            (0, arm_names)
+                        };
+
+                        ValidatedDefinition::Union(ValidatedUnion {
+                            name: u.name.clone(),
+                            body: ValidatedUnionBody::Bool(ValidatedUnionBoolBody {
+                                true_arm: body.true_arm.clone(),
+                                false_arm: body.false_arm.clone(),
+                                size: DefinitionSize {
+                                    known: known.clone(),
+                                    deps: deps.clone(),
+                                },
+                            }),
+                            size: DefinitionSize {
+                                known: 4 + known.clone(),
+                                deps: deps.clone(),
+                            },
+                        })
+                    }
+                    XdrUnionBody::Enum(body) => {
+                        let mut arms_iter = body.arms.iter();
+
+                        let Some(discriminant_name) = &body.discriminant else {
+                            todo!("we do not currently support void discriminant unions")
+                        };
+
+                        let Ok(discriminant) = tab.lookup_definition(discriminant_name) else {
+                            panic!("could not find discriminant \"{}\"", discriminant_name)
+                        };
+
+                        let all_possible: HashSet<String> = match &*discriminant {
+                            Definition::Enum(xdr_enum) => xdr_enum
+                                .variants
+                                .iter()
+                                .map(|(var_name, _)| var_name.clone())
+                                .collect(),
+                            _ => {
+                                todo!("we currently do not support discriminant types outside of enum for our enum descriminant")
+                            }
+                        };
+                        let mut left = all_possible.clone();
+
+                        for (val, decl) in body.arms.iter() {
+                            match val {
+                                Value::Int(_) => {
+                                    todo!("{}: we currently do not support integer values in enum unions", u.name)
+                                }
+                                Value::Name(value_name) => {
+                                    if !all_possible.contains(value_name) {
+                                        panic!(
+                                            "{}: unknown enum type for {}: {}",
+                                            u.name, discriminant_name, value_name
+                                        )
+                                    }
+
+                                    if !left.remove(value_name) {
+                                        panic!(
+                                            "{}: enum variant {}::{} seems to be a duplicate case",
+                                            u.name, discriminant_name, value_name
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // if all the enum cases are covered by the match arms, we can elide the
+                        // default case
+                        let size = if body.default_arm.is_some() && !left.is_empty() {
+                            let default_arm = (&body.default_arm).as_ref().unwrap();
+                            let default_size = default_arm.size(tab, size_tab);
+                            if default_size.is_none()
+                                || arms_iter.all(|(_, d)| d.size(tab, size_tab) == default_size)
+                            {
+                                default_size
+                            } else {
+                                None
+                            }
+                        } else {
+                            match arms_iter.next() {
+                                Some((_, first)) => {
+                                    let first_size = first.size(tab, size_tab);
+
+                                    if first_size.is_none()
+                                        || arms_iter
+                                            .all(|(_, d)| d.size(tab, size_tab) == first_size)
+                                    {
+                                        first_size
+                                    } else {
+                                        None
+                                    }
+                                }
+                                None => {
+                                    panic!("union {} does not have any arms!", u.name)
+                                }
+                            }
+                        };
+
+                        let (known, deps) = if let Some(size) = size {
+                            (size, Vec::new())
+                        } else {
+                            (
+                                0,
+                                body.arms
+                                    .iter()
+                                    .map(|(_, arm)| arm)
+                                    .filter_map(|arm| arm.name())
+                                    .map(|name| name.to_string())
+                                    .collect(),
+                            )
+                        };
+
+                        ValidatedDefinition::Union(ValidatedUnion {
+                            name: u.name.clone(),
+                            body: ValidatedUnionBody::Enum(ValidatedUnionEnumBody {
+                                discriminant: body.discriminant.clone(),
+                                arms: body.arms.clone(),
+                                default_arm: body.default_arm.clone(),
+                                size: DefinitionSize {
+                                    known: known.clone(),
+                                    deps: deps.clone(),
+                                },
+                            }),
+                            size: DefinitionSize {
+                                known: known.clone() + 4,
+                                deps,
+                            },
+                        })
+                    }
+                }
+            }
         };
 
-        Ok(())
+        Ok(ret)
+    }
+}
+
+impl XdrType {
+    fn size(&self, size_tab: &HashMap<String, DefinitionSize>) -> Option<usize> {
+        match self {
+            XdrType::Int | XdrType::UInt | XdrType::Float | XdrType::Bool => Some(4),
+            XdrType::Hyper | XdrType::UHyper | XdrType::Double => Some(8),
+            XdrType::Quadruple => Some(16),
+            XdrType::Name(tn) => {
+                if let Some(decl_size) = size_tab.get(tn) {
+                    if decl_size.is_determinate() {
+                        Some(decl_size.known)
+                    } else {
+                        None
+                    }
+                } else {
+                    panic!("could not find size information for type \"{tn}\"");
+                }
+            }
+        }
+    }
+}
+
+impl Declaration {
+    fn name(&self) -> Option<&str> {
+        match self {
+            Declaration::Named(named_declaration) => Some(named_declaration.name.as_str()),
+            Declaration::Void => None,
+        }
+    }
+
+    fn size(&self, tab: &SymbolTable, size_tab: &HashMap<String, DefinitionSize>) -> Option<usize> {
+        if let Declaration::Named(m) = self {
+            match &m.kind {
+                DeclarationKind::Scalar(xdr_type) => xdr_type.size(size_tab),
+                DeclarationKind::Array(array) => {
+                    match &array.size {
+                        ArraySize::Fixed(value) => {
+                            let count = match value {
+                                Value::Int(val) => val.clone() as usize,
+                                Value::Name(name) => {
+                                    if let Ok(constval) = tab.lookup_definition(name) {
+                                        if let Definition::Const(constval) = &*constval {
+                                            if let Value::Int(intval) = constval.value {
+                                                intval as usize
+                                            } else {
+                                                panic!("constant \"{name}\" passed to array is not immediately an integer");
+                                            }
+                                        } else {
+                                            panic!("definition for value passed as array length specifier \"{name}\" is not a constant");
+                                        }
+                                    } else {
+                                        panic!("could not find definition for constant of name \"{name}\"");
+                                    }
+                                }
+                            };
+
+                            let single_width = match &array.kind {
+                                ArrayKind::Byte | ArrayKind::Ascii => Some(1 as usize),
+                                ArrayKind::UserType(xdr_type) => xdr_type.size(size_tab),
+                            };
+
+                            if let Some(single_width) = single_width {
+                                // Align to closest >= 4 byte multiple
+                                Some((single_width * count + 3) & !(0b11 as usize))
+                            } else {
+                                None
+                            }
+                        }
+                        _ => None,
+                    }
+                }
+                DeclarationKind::Optional(_) => None,
+            }
+        } else {
+            Some(0)
+        }
     }
 }
 
 impl XdrStruct {
-    fn validate(&mut self, tab: &SymbolTable) -> crate::Result<()> {
-        self.self_referential_optional(tab)
+    fn validate(
+        &mut self,
+        tab: &SymbolTable,
+        size_tab: &HashMap<String, DefinitionSize>,
+    ) -> crate::Result<ValidatedStruct> {
+        match self.self_referential_optional(tab) {
+            Err(e) => return Err(e),
+            _ => {}
+        }
+
+        let mut s = DefinitionSize {
+            known: 0,
+            deps: Vec::new(),
+        };
+
+        let members: Vec<(Declaration, DefinitionOffset)> = self
+            .members
+            .iter()
+            .map(|m| {
+                let name: String = if let Declaration::Named(m) = m {
+                    m.name.clone()
+                } else {
+                    panic!("Unamed declaration found!")
+                };
+
+                let m_size: Option<usize> = m.size(tab, size_tab);
+
+                let ret = (m.clone(), s.clone());
+
+                if let Some(m_size) = m_size {
+                    s.known += m_size;
+                } else {
+                    s.deps.push(name);
+                }
+
+                ret
+            })
+            .collect();
+
+        Ok(ValidatedStruct {
+            name: self.name.clone(),
+            members,
+            size: s.clone(),
+            self_referential_optional: self.self_referential_optional,
+        })
     }
 
     /// Determine if a struct has a "self-referential optional":

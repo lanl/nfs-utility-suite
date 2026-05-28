@@ -2,6 +2,7 @@
 // Copyright 2025. Triad National Security, LLC.
 
 mod ast;
+mod ir;
 mod codegen;
 mod parser;
 mod scanner;

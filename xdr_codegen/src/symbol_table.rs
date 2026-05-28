@@ -20,20 +20,11 @@ impl SymbolTable {
         let mut definitions = Vec::new();
 
         for def in schema.definitions.iter() {
-            let name = match def {
-                Definition::Const(d) => &d.name,
-                Definition::TypeDef(d) => match &d.decl {
-                    Declaration::Named(n) => &n.name,
-                    Declaration::Void => {
-                        continue;
-                    }
-                },
-                Definition::Struct(d) => &d.name,
-                Definition::Enum(d) => &d.name,
-                Definition::Union(d) => &d.name,
-            };
-            tab.insert(name.clone(), RefCell::new(def.clone()));
-            definitions.push(name.clone());
+            let name = def.get_name();
+            if let Some(name) = name {
+                tab.insert(name.to_string(), RefCell::new(def.clone()));
+                definitions.push(name.to_string());
+            }
         }
 
         (SymbolTable { tab }, definitions)
