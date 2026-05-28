@@ -131,152 +131,8 @@ impl Definition {
             }),
             Definition::Union(u) => {
                 match &u.body {
-                    XdrUnionBody::Bool(body) => {
-                        let true_size = body.true_arm.size(tab, size_tab);
-                        let false_size = body.false_arm.size(tab, size_tab);
-
-                        let (known, deps) = if true_size.is_some() && true_size == false_size {
-                            (true_size.unwrap(), Vec::new())
-                        } else {
-                            let arm_names: Vec<String> =
-                                [body.true_arm.name(), body.false_arm.name()]
-                                    .iter()
-                                    .filter_map(|val| *val)
-                                    .map(|val| val.to_string())
-                                    .collect();
-
-                            if arm_names.is_empty() {
-                                panic!("both boolean arms for {} are unamed, which is weird, because the two arm sizes should have evaluated to equal eachother and never reached this case", u.name)
-                            }
-
-                            (0, arm_names)
-                        };
-
-                        ValidatedDefinition::Union(ValidatedUnion {
-                            name: u.name.clone(),
-                            body: ValidatedUnionBody::Bool(ValidatedUnionBoolBody {
-                                true_arm: body.true_arm.clone(),
-                                false_arm: body.false_arm.clone(),
-                                size: DefinitionSize {
-                                    known,
-                                    deps: deps.clone(),
-                                },
-                            }),
-                            size: DefinitionSize {
-                                known: 4 + known,
-                                deps: deps.clone(),
-                            },
-                        })
-                    }
-                    XdrUnionBody::Enum(body) => {
-                        let mut arms_iter = body.arms.iter();
-
-                        let Some(discriminant_name) = &body.discriminant else {
-                            todo!("we do not currently support void discriminant unions")
-                        };
-
-                        let Ok(discriminant) = tab.lookup_definition(discriminant_name) else {
-                            panic!("could not find discriminant \"{}\"", discriminant_name)
-                        };
-
-                        let all_possible: HashSet<String> = match &*discriminant {
-                            Definition::Enum(xdr_enum) => xdr_enum
-                                .variants
-                                .iter()
-                                .map(|(var_name, _)| var_name.clone())
-                                .collect(),
-                            _ => {
-                                todo!("we currently do not support discriminant types outside of enum for our enum descriminant")
-                            }
-                        };
-                        let mut left = all_possible.clone();
-
-                        for (val, _decl) in body.arms.iter() {
-                            match val {
-                                Value::Int(_) => {
-                                    todo!("{}: we currently do not support integer values in enum unions", u.name)
-                                }
-                                Value::Name(value_name) => {
-                                    if !all_possible.contains(value_name) {
-                                        panic!(
-                                            "{}: unknown enum type for {}: {}",
-                                            u.name, discriminant_name, value_name
-                                        )
-                                    }
-
-                                    if !left.remove(value_name) {
-                                        panic!(
-                                            "{}: enum variant {}::{} seems to be a duplicate case",
-                                            u.name, discriminant_name, value_name
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        // if all the enum cases are covered by the match arms, we can elide the
-                        // default case
-                        let size = if body.default_arm.is_some() && !left.is_empty() {
-                            let default_arm = body.default_arm.as_ref().unwrap();
-                            let default_size = default_arm.size(tab, size_tab);
-                            if default_size.is_none()
-                                || arms_iter.all(|(_, d)| d.size(tab, size_tab) == default_size)
-                            {
-                                default_size
-                            } else {
-                                None
-                            }
-                        } else {
-                            match arms_iter.next() {
-                                Some((_, first)) => {
-                                    let first_size = first.size(tab, size_tab);
-
-                                    if first_size.is_none()
-                                        || arms_iter
-                                            .all(|(_, d)| d.size(tab, size_tab) == first_size)
-                                    {
-                                        first_size
-                                    } else {
-                                        None
-                                    }
-                                }
-                                None => {
-                                    panic!("union {} does not have any arms!", u.name)
-                                }
-                            }
-                        };
-
-                        let (known, deps) = if let Some(size) = size {
-                            (size, Vec::new())
-                        } else {
-                            (
-                                0,
-                                body.arms
-                                    .iter()
-                                    .map(|(_, arm)| arm)
-                                    .filter_map(|arm| arm.name())
-                                    .map(|name| name.to_string())
-                                    .collect(),
-                            )
-                        };
-
-                        ValidatedDefinition::Union(ValidatedUnion {
-                            name: u.name.clone(),
-                            body: ValidatedUnionBody::Enum(ValidatedUnionEnumBody {
-                                discriminant: body.discriminant.clone(),
-                                arms: body.arms.clone(),
-                                default_arm: body.default_arm.clone(),
-                                size: DefinitionSize {
-                                    known,
-                                    deps: deps.clone(),
-                                },
-                            }),
-                            size: DefinitionSize {
-                                known: known + 4,
-                                deps,
-                            },
-                        })
-                    }
+                    XdrUnionBody::Bool(body) => body.validate(u, tab, size_tab),
+                    XdrUnionBody::Enum(body) => body.validate(u, tab, size_tab),
                 }
             }
         };
@@ -449,6 +305,169 @@ impl XdrStruct {
         }
 
         Ok(self_referential_optional)
+    }
+}
+
+impl XdrUnionBoolBody {
+    fn validate(
+        &self,
+        u: &XdrUnion,
+        tab: &SymbolTable,
+        size_tab: &HashMap<String, DefinitionSize>,
+    ) -> ValidatedDefinition {
+        let true_size = self.true_arm.size(tab, size_tab);
+        let false_size = self.false_arm.size(tab, size_tab);
+
+        let (known, deps) = if true_size.is_some() && true_size == false_size {
+            (true_size.unwrap(), Vec::new())
+        } else {
+            let arm_names: Vec<String> = [self.true_arm.name(), self.false_arm.name()]
+                .iter()
+                .filter_map(|val| *val)
+                .map(|val| val.to_string())
+                .collect();
+
+            if arm_names.is_empty() {
+                panic!("both boolean arms for {} are unamed, which is weird, because the two arm sizes should have evaluated to equal eachother and never reached this case", u.name)
+            }
+
+            (0, arm_names)
+        };
+
+        ValidatedDefinition::Union(ValidatedUnion {
+            name: u.name.clone(),
+            body: ValidatedUnionBody::Bool(ValidatedUnionBoolBody {
+                true_arm: self.true_arm.clone(),
+                false_arm: self.false_arm.clone(),
+                size: DefinitionSize {
+                    known,
+                    deps: deps.clone(),
+                },
+            }),
+            size: DefinitionSize {
+                known: 4 + known,
+                deps: deps.clone(),
+            },
+        })
+    }
+}
+
+impl XdrUnionEnumBody {
+    fn validate(
+        &self,
+        u: &XdrUnion,
+        tab: &SymbolTable,
+        size_tab: &HashMap<String, DefinitionSize>,
+    ) -> ValidatedDefinition {
+        let mut arms_iter = self.arms.iter();
+
+        let Some(discriminant_name) = &self.discriminant else {
+            todo!("we do not currently support void discriminant unions")
+        };
+
+        let Ok(discriminant) = tab.lookup_definition(discriminant_name) else {
+            panic!("could not find discriminant \"{}\"", discriminant_name)
+        };
+
+        let all_possible: HashSet<String> = match &*discriminant {
+            Definition::Enum(xdr_enum) => xdr_enum
+                .variants
+                .iter()
+                .map(|(var_name, _)| var_name.clone())
+                .collect(),
+            _ => {
+                todo!("we currently do not support discriminant types outside of enum for our enum descriminant")
+            }
+        };
+        let mut left = all_possible.clone();
+
+        for (val, _decl) in self.arms.iter() {
+            match val {
+                Value::Int(_) => {
+                    todo!(
+                        "{}: we currently do not support integer values in enum unions",
+                        u.name
+                    )
+                }
+                Value::Name(value_name) => {
+                    if !all_possible.contains(value_name) {
+                        panic!(
+                            "{}: unknown enum type for {}: {}",
+                            u.name, discriminant_name, value_name
+                        )
+                    }
+
+                    if !left.remove(value_name) {
+                        panic!(
+                            "{}: enum variant {}::{} seems to be a duplicate case",
+                            u.name, discriminant_name, value_name
+                        )
+                    }
+                }
+            }
+        }
+
+        // if all the enum cases are covered by the match arms, we can elide the
+        // default case
+        let size = if self.default_arm.is_some() && !left.is_empty() {
+            let default_arm = self.default_arm.as_ref().unwrap();
+            let default_size = default_arm.size(tab, size_tab);
+            if default_size.is_none()
+                || arms_iter.all(|(_, d)| d.size(tab, size_tab) == default_size)
+            {
+                default_size
+            } else {
+                None
+            }
+        } else {
+            match arms_iter.next() {
+                Some((_, first)) => {
+                    let first_size = first.size(tab, size_tab);
+
+                    if first_size.is_none()
+                        || arms_iter.all(|(_, d)| d.size(tab, size_tab) == first_size)
+                    {
+                        first_size
+                    } else {
+                        None
+                    }
+                }
+                None => {
+                    panic!("union {} does not have any arms!", u.name)
+                }
+            }
+        };
+
+        let (known, deps) = if let Some(size) = size {
+            (size, Vec::new())
+        } else {
+            (
+                0,
+                self.arms
+                    .iter()
+                    .map(|(_, arm)| arm)
+                    .filter_map(|arm| arm.name())
+                    .map(|name| name.to_string())
+                    .collect(),
+            )
+        };
+
+        ValidatedDefinition::Union(ValidatedUnion {
+            name: u.name.clone(),
+            body: ValidatedUnionBody::Enum(ValidatedUnionEnumBody {
+                discriminant: self.discriminant.clone(),
+                arms: self.arms.clone(),
+                default_arm: self.default_arm.clone(),
+                size: DefinitionSize {
+                    known,
+                    deps: deps.clone(),
+                },
+            }),
+            size: DefinitionSize {
+                known: known + 4,
+                deps,
+            },
+        })
     }
 }
 
