@@ -1,8 +1,5 @@
-use std::fmt::Display;
-
 use crate::ast::{
-    ConstDefinition, Declaration, DefaultUnionArm, Definition, UnionArm, Value, XdrStruct,
-    XdrTypeDef, XdrUnion,
+    ConstDefinition, Declaration, DefaultUnionArm, NamedDeclaration, UnionArm, Value, XdrTypeDef,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -15,7 +12,7 @@ pub type DefinitionOffset = DefinitionSize;
 
 impl DefinitionSize {
     pub fn is_determinate(&self) -> bool {
-        self.deps.len() == 0
+        self.deps.is_empty()
     }
 }
 
@@ -43,7 +40,7 @@ pub struct ValidatedEnum {
 pub struct ValidatedStruct {
     // TODO: store snake_case -> CameCase transformed name...
     pub name: String,
-    pub members: Vec<(Declaration, DefinitionOffset)>,
+    pub members: Vec<(NamedDeclaration, DefinitionOffset)>,
     pub size: DefinitionSize,
 
     /// Structs that have an optional "pointer" to themselves at the end need special handling

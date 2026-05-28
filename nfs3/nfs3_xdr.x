@@ -1,3 +1,8 @@
+const FHSIZE = 64;
+const NFS3_COOKIEVERFSIZE = 8;
+const NFS3_CREATEVERFSIZE = 8;
+const NFS3_WRITEVERFSIZE = 8;
+
 typedef unsigned hyper uint64;
 typedef hyper int64;
 typedef unsigned long uint32;
@@ -13,11 +18,6 @@ typedef uint64 Size;
 typedef uint64 Offset;
 typedef uint32 Mode;
 typedef uint32 Count;
-
-const FHSIZE = 64;
-const COOKIEVERFSIZE = 8;
-const CREATEVERFSIZE = 8;
-const WRITEVERFSIZE = 8;
 
 enum NfsResult {
 	Ok          = 0,

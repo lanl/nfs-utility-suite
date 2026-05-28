@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright 2025. Triad National Security, LLC.
 
+use crate::symbol_table::HasName;
+
 #[derive(Debug)]
 pub struct Schema {
     pub definitions: Vec<Definition>,
@@ -90,10 +92,6 @@ pub struct XdrStruct {
     // TODO: store snake_case -> CameCase transformed name...
     pub name: String,
     pub members: Vec<NamedDeclaration>,
-
-    /// Structs that have an optional "pointer" to themselves at the end need special handling
-    /// during codegen. This field is filled in during Schema::validate().
-    pub self_referential_optional: bool,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -189,8 +187,8 @@ pub enum DeclarationKind {
     Optional(XdrType),
 }
 
-impl Definition {
-    pub fn get_name(&self) -> Option<&str> {
+impl HasName for Definition {
+    fn get_name(&self) -> Option<&str> {
         match self {
             Definition::Const(d) => Some(&d.name),
             Definition::TypeDef(d) => match &d.decl {

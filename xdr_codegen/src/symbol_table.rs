@@ -6,20 +6,27 @@ use std::{
     collections::HashMap,
 };
 
-use crate::{ast::*, XdrError};
+use crate::{ast::*, ir::ValidatedDefinition, XdrError};
 
-pub struct SymbolTable {
-    pub tab: HashMap<UnresolvedName, RefCell<Definition>>,
+pub struct GenericSymbolTable<T> {
+    pub tab: HashMap<UnresolvedName, RefCell<T>>,
 }
-
 pub type DefinitionList = Vec<String>;
 
-impl SymbolTable {
-    pub fn new(schema: &Schema) -> (Self, DefinitionList) {
+pub trait HasName {
+    fn get_name(&self) -> Option<&str>;
+}
+
+impl<T> GenericSymbolTable<T>
+where
+    T: HasName,
+    T: Clone,
+{
+    pub fn new(input_definitions: &[T]) -> (Self, DefinitionList) {
         let mut tab = HashMap::new();
         let mut definitions = Vec::new();
 
-        for def in schema.definitions.iter() {
+        for def in input_definitions.iter() {
             let name = def.get_name();
             if let Some(name) = name {
                 tab.insert(name.to_string(), RefCell::new(def.clone()));
@@ -27,14 +34,17 @@ impl SymbolTable {
             }
         }
 
-        (SymbolTable { tab }, definitions)
+        (GenericSymbolTable::<T> { tab }, definitions)
     }
 
     /// Tries to resolve a name to its underlying type.
-    pub fn lookup_definition(&self, name: &str) -> Result<Ref<'_, Definition>, XdrError> {
+    pub fn lookup_definition(&self, name: &str) -> Result<Ref<'_, T>, XdrError> {
         match self.tab.get(name) {
             Some(ent) => Ok(ent.borrow()),
             None => Err(XdrError::UndefinedName(name.to_string())),
         }
     }
 }
+
+pub type SymbolTable = GenericSymbolTable<Definition>;
+pub type ValidatedSymbolTable = GenericSymbolTable<ValidatedDefinition>;
