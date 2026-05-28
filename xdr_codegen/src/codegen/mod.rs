@@ -438,6 +438,10 @@ impl ValidatedUnionBoolBody {
             unimplemented!("Bool union with non-Void false arm is not supported");
         };
 
+        if let Declaration::Void = self.true_arm {
+            unimplemented!("Bool union with Void true arm is not supported");
+        }
+
         let inner_type = match &self.true_arm {
             Declaration::Named(n) => n.as_type_name(tab),
             Declaration::Void => "()".to_string(),
