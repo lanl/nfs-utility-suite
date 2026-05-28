@@ -22,10 +22,6 @@ impl XdrStruct {
         buf.code_block("pub fn serialize(&self, buf: &mut [u8]) -> usize", |buf| {
             buf.add_line("let mut offset = 0;");
             for decl in &self.members {
-                let Declaration::Named(decl) = decl else {
-                    buf.add_line("// void");
-                    continue;
-                };
                 buf.add_line(&format!("// {}:", decl.name));
                 decl.serialize_no_alloc_inline(None, buf, tab);
             }

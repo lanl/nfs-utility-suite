@@ -89,7 +89,7 @@ pub struct XdrEnum {
 pub struct XdrStruct {
     // TODO: store snake_case -> CameCase transformed name...
     pub name: String,
-    pub members: Vec<Declaration>,
+    pub members: Vec<NamedDeclaration>,
 
     /// Structs that have an optional "pointer" to themselves at the end need special handling
     /// during codegen. This field is filled in during Schema::validate().

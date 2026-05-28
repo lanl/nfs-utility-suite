@@ -122,10 +122,6 @@ impl XdrStruct {
         buf.code_block("pub fn serialize_alloc(&self) -> Vec<u8>", |buf| {
             buf.add_line("let mut buf = Vec::new();");
             for decl in self.members.iter() {
-                let Declaration::Named(decl) = decl else {
-                    buf.add_line("// void");
-                    continue;
-                };
                 buf.add_line(&format!("// {}:", decl.name));
                 decl.serialize_inline(None, Context::NotInUnion, buf, tab);
             }

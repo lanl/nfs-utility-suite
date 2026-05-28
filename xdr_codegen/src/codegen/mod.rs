@@ -641,9 +641,6 @@ impl XdrStruct {
         buf.type_header();
         buf.code_block(&format!("pub struct {}", self.name), |buf| {
             for decl in self.members.iter() {
-                let Declaration::Named(decl) = decl else {
-                    unimplemented!("'void' is not supported as a struct member");
-                };
                 self.member_declaration(decl, buf, tab);
             }
         });
@@ -660,9 +657,6 @@ impl XdrStruct {
             buf.code_block("fn default() -> Self", |buf| {
                 buf.code_block(&self.name, |buf| {
                     for decl in self.members.iter() {
-                        let Declaration::Named(decl) = decl else {
-                            unimplemented!("'void' is not supported as a struct member");
-                        };
                         buf.add_line(&format!("{}: {},", decl.name, decl.default_value(tab)));
                     }
                 });

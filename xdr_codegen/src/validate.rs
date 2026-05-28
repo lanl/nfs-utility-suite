@@ -93,31 +93,35 @@ impl XdrStruct {
 ///
 /// This is recursive because a declaration might refer to a typedef, which might in turn refer to
 /// an optional `outer_name`.
-fn is_declaration_option_of_name(outer_name: &str, decl: &Declaration, tab: &SymbolTable) -> bool {
-    match decl {
-        Declaration::Named(n) => match &n.kind {
-            DeclarationKind::Optional(ty) => {
-                let XdrType::Name(member_type_name) = ty else {
-                    return false;
-                };
-                if *member_type_name != outer_name {
-                    return false;
-                }
-                true
+fn is_declaration_option_of_name(
+    outer_name: &str,
+    n: &NamedDeclaration,
+    tab: &SymbolTable,
+) -> bool {
+    match &n.kind {
+        DeclarationKind::Optional(ty) => {
+            let XdrType::Name(member_type_name) = ty else {
+                return false;
+            };
+            if *member_type_name != outer_name {
+                return false;
             }
-            DeclarationKind::Scalar(ty) => {
-                let XdrType::Name(name) = ty else {
-                    return false;
-                };
-                let def = tab.lookup_definition(name).expect("Undefined name");
-                let Definition::TypeDef(ref typedef) = *def else {
-                    return false;
-                };
-                is_declaration_option_of_name(outer_name, &typedef.decl, tab)
-            }
-            DeclarationKind::Array(_) => false,
-        },
-        Declaration::Void => false,
+            true
+        }
+        DeclarationKind::Scalar(ty) => {
+            let XdrType::Name(name) = ty else {
+                return false;
+            };
+            let def = tab.lookup_definition(name).expect("Undefined name");
+            let Definition::TypeDef(ref typedef) = *def else {
+                return false;
+            };
+            let Declaration::Named(ref n) = typedef.decl else {
+                return false;
+            };
+            is_declaration_option_of_name(outer_name, n, tab)
+        }
+        DeclarationKind::Array(_) => false,
     }
 }
 

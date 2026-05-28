@@ -241,7 +241,7 @@ impl<'src> Parser<'src> {
         variants
     }
 
-    fn xdr_struct_body(&mut self) -> Vec<Declaration> {
+    fn xdr_struct_body(&mut self) -> Vec<NamedDeclaration> {
         self.expect(TokenKind::LeftBrace, "struct body must start with '{'");
         let mut members = Vec::new();
         loop {
@@ -249,7 +249,11 @@ impl<'src> Parser<'src> {
                 self.next();
                 break;
             }
-            members.push(self.declaration());
+            let decl = self.declaration();
+            let Declaration::Named(n) = decl else {
+                panic!("Invalid to have void declaration as a struct member.");
+            };
+            members.push(n);
             self.expect(TokenKind::Semicolon, "Expected ';' following declaration");
         }
 
