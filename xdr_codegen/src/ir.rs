@@ -8,7 +8,7 @@ pub struct DefinitionSize {
     pub deps: Vec<String>,
 }
 
-pub type DefinitionOffset = DefinitionSize;
+pub type DeclarationOfset = DefinitionSize;
 
 impl DefinitionSize {
     pub fn is_determinate(&self) -> bool {
@@ -40,7 +40,7 @@ pub struct ValidatedEnum {
 pub struct ValidatedStruct {
     // TODO: store snake_case -> CameCase transformed name...
     pub name: String,
-    pub members: Vec<(NamedDeclaration, DefinitionOffset)>,
+    pub members: Vec<(NamedDeclaration, DeclarationOfset)>,
     pub size: DefinitionSize,
 
     /// Structs that have an optional "pointer" to themselves at the end need special handling

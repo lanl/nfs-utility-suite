@@ -278,7 +278,7 @@ impl XdrStruct {
             deps: Vec::new(),
         };
 
-        let members: Vec<(NamedDeclaration, DefinitionOffset)> = self
+        let members: Vec<(NamedDeclaration, DeclarationOfset)> = self
             .members
             .drain(..)
             .map(|m| {
