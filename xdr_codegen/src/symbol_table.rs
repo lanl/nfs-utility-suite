@@ -5,6 +5,7 @@ use std::collections::HashMap;
 
 use crate::{ast::*, ir::ValidatedDefinition, XdrError};
 
+#[derive(Debug)]
 pub struct GenericSymbolTable<T> {
     pub tab: HashMap<UnresolvedName, T>,
 }

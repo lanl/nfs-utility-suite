@@ -7,6 +7,7 @@ use crate::{ast::*, ir::*, symbol_table::*, XdrError};
 
 pub type SizeTab = HashMap<String, DefinitionSize>;
 
+#[derive(Debug)]
 pub struct ValidatedSchema {
     /// This owns the definitions of the... definitions.
     pub symbol_table: ValidatedSymbolTable,
@@ -89,6 +90,7 @@ impl ValidatedSchema {
         let mut size_tab: SizeTab = HashMap::new();
 
         let mut validated_symbol_table = ValidatedSymbolTable::new_empty();
+        let mut definition_list = Vec::new();
         for definition in schema.definitions.drain(..) {
             let Some(definition_name) = definition.get_name().map(|v| v.to_string()) else {
                 continue;
@@ -101,10 +103,10 @@ impl ValidatedSchema {
             validated_symbol_table
                 .tab
                 .insert(definition_name.clone(), validated_definition);
+            definition_list.push(definition_name.clone());
             size_tab.insert(definition_name, size);
         }
 
-        let definition_list = validated_symbol_table.tab.keys().cloned().collect();
         Ok(ValidatedSchema {
             symbol_table: validated_symbol_table,
             definition_list,
@@ -517,13 +519,17 @@ fn is_declaration_option_of_name(
 
 #[cfg(test)]
 mod tests {
-    use crate::{validate, Parser, Scanner, XdrError};
+    use crate::{
+        ast::{Array, ArrayKind, ArraySize, DeclarationKind, NamedDeclaration, Value, XdrType},
+        ir::{DefinitionSize, ValidatedDefinition, ValidatedStruct},
+        validate::{self, ValidatedSchema},
+        Parser, Scanner, XdrError,
+    };
 
-    fn try_validate(src: &str) -> crate::Result<()> {
+    fn try_validate(src: &str) -> crate::Result<ValidatedSchema> {
         let mut parser = Parser::new(Scanner::new(src));
         let schema = parser.parse()?;
-        let _ = validate::ValidatedSchema::validate(schema)?;
-        Ok(())
+        validate::ValidatedSchema::validate(schema)
     }
 
     #[test]
@@ -536,4 +542,324 @@ mod tests {
     fn valid_optional() {
         assert!(try_validate("struct foo { int a; foo *next; };").is_ok());
     }
+
+    #[test]
+    fn deterministic_struct() {
+        let xdr = r#"
+            struct Foo {
+                int a;
+                opaque b[5];
+                hyper c;
+            };
+
+            struct Bar {
+                Foo foos[3];
+                double baz;
+            };
+        "#;
+
+        let res = try_validate(xdr);
+        assert!(res.is_ok());
+
+        let schema = res.unwrap();
+
+        let foo_def = schema.symbol_table.lookup_definition("Foo").unwrap();
+        let ValidatedDefinition::Struct(foo_def) = foo_def else {
+            panic!("Foo should be a struct");
+        };
+
+        assert!(
+            foo_def.size
+                == DefinitionSize {
+                    known: 4 + 8 + 8,
+                    deps: Vec::new(),
+                }
+        );
+
+        let bar_def = schema.symbol_table.lookup_definition("Bar").unwrap();
+        let ValidatedDefinition::Struct(bar_def) = bar_def else {
+            panic!("Bar should be a struct");
+        };
+
+        assert!(foo_def.members.len() == 3);
+        let (foo_a, foo_a_offset) = &foo_def.members[0];
+        assert_eq!(foo_a.name, "a");
+        assert!(matches!(foo_a.kind, DeclarationKind::Scalar(XdrType::Int)));
+        assert!(foo_a_offset.known == 0);
+        assert!(foo_a_offset.deps.is_empty());
+        assert!(foo_a.size(&schema.symbol_table, &schema.size_tab) == Some(4));
+
+        let (foo_b, foo_b_offset) = &foo_def.members[1];
+        assert!(foo_b.name == "b");
+        assert!(matches!(
+            foo_b.kind,
+            DeclarationKind::Array(Array {
+                kind: ArrayKind::Byte,
+                size: ArraySize::Fixed(Value::Int(5)),
+            })
+        ));
+        assert!(foo_b_offset.known == 4);
+        assert!(foo_b_offset.deps.is_empty());
+        assert!(foo_b.size(&schema.symbol_table, &schema.size_tab) == Some(8));
+
+        let (foo_c, foo_c_offset) = &foo_def.members[2];
+        assert!(foo_c.name == "c");
+        assert!(matches!(
+            foo_c.kind,
+            DeclarationKind::Scalar(XdrType::Hyper)
+        ));
+        assert!(foo_c_offset.known == 12);
+        assert!(foo_c_offset.deps.is_empty());
+        assert!(foo_c.size(&schema.symbol_table, &schema.size_tab) == Some(8));
+
+        assert_eq!(bar_def.size.known, foo_def.size.known * 3 + 8);
+        assert!(bar_def.size.deps.is_empty());
+        assert!(bar_def.size.is_determinate());
+
+        let (bar_foos, bar_foos_offset) = &bar_def.members[0];
+        assert_eq!(bar_foos.name, "foos");
+        assert_eq!(
+            bar_foos_offset,
+            &DefinitionSize {
+                known: 0,
+                deps: Vec::new(),
+            }
+        );
+
+        let (bar_baz, bar_baz_offset) = &bar_def.members[1];
+        assert_eq!(bar_baz.name, "baz");
+        assert_eq!(
+            bar_baz_offset,
+            &DefinitionSize {
+                known: foo_def.size.known * 3,
+                deps: Vec::new(),
+            }
+        );
+    }
+
+    #[test]
+    fn non_deterministic_struct() {
+        let xdr = r#"
+            struct Foo {
+                int a;
+                opaque b[5];
+                hyper c;
+            };
+
+            struct Bar {
+                opaque a[3];
+                opaque b<5>;
+                Foo foo;
+                double baz;
+            };
+
+            struct Baz {
+                int beforeBar;
+                Bar bar;
+                unsigned int drunk;
+            };
+        "#;
+
+        let res = try_validate(xdr);
+        assert!(res.is_ok());
+
+        let schema = res.unwrap();
+
+        let foo_def = schema.symbol_table.lookup_definition("Foo").unwrap();
+        let ValidatedDefinition::Struct(foo_def) = foo_def else {
+            panic!("Foo should be a struct");
+        };
+
+        assert!(
+            foo_def.size
+                == DefinitionSize {
+                    known: 4 + 8 + 8,
+                    deps: Vec::new(),
+                }
+        );
+
+        let bar_def = schema.symbol_table.lookup_definition("Bar").unwrap();
+        let ValidatedDefinition::Struct(bar_def) = bar_def else {
+            panic!("Bar should be a struct");
+        };
+        assert_eq!(
+            bar_def,
+            &ValidatedStruct {
+                name: "Bar".to_string(),
+                members: vec![
+                    (
+                        NamedDeclaration {
+                            name: "a".to_string(),
+                            kind: DeclarationKind::Array(Array {
+                                kind: ArrayKind::Byte,
+                                size: ArraySize::Fixed(Value::Int(3))
+                            })
+                        },
+                        DefinitionSize {
+                            known: 0,
+                            deps: Vec::new(),
+                        }
+                    ),
+                    (
+                        NamedDeclaration {
+                            name: "b".to_string(),
+                            kind: DeclarationKind::Array(Array {
+                                kind: ArrayKind::Byte,
+                                size: ArraySize::Limited(Value::Int(5))
+                            })
+                        },
+                        DefinitionSize {
+                            known: 4,
+                            deps: Vec::new(),
+                        }
+                    ),
+                    (
+                        NamedDeclaration {
+                            name: "foo".to_string(),
+                            kind: DeclarationKind::Scalar(XdrType::Name("Foo".to_string())),
+                        },
+                        DefinitionSize {
+                            known: 4,
+                            deps: vec!["b".to_string()],
+                        }
+                    ),
+                    (
+                        NamedDeclaration {
+                            name: "baz".to_string(),
+                            kind: DeclarationKind::Scalar(XdrType::Double),
+                        },
+                        DefinitionSize {
+                            known: 24,
+                            deps: vec!["b".to_string()],
+                        }
+                    ),
+                ],
+                size: DefinitionSize {
+                    known: 32,
+                    deps: vec!["b".to_string()],
+                },
+                self_referential_optional: false,
+            }
+        );
+
+        let baz_def = schema.symbol_table.lookup_definition("Baz").unwrap();
+        let ValidatedDefinition::Struct(baz_def) = baz_def else {
+            panic!("Baz should be a struct");
+        };
+        assert_eq!(
+            baz_def,
+            &ValidatedStruct {
+                name: "Baz".to_string(),
+                members: vec![
+                    (
+                        NamedDeclaration {
+                            name: "beforeBar".to_string(),
+                            kind: DeclarationKind::Scalar(XdrType::Int),
+                        },
+                        DefinitionSize {
+                            known: 0,
+                            deps: Vec::new(),
+                        }
+                    ),
+                    (
+                        NamedDeclaration {
+                            name: "bar".to_string(),
+                            kind: DeclarationKind::Scalar(XdrType::Name("Bar".to_string())),
+                        },
+                        DefinitionSize {
+                            known: 4,
+                            deps: Vec::new(),
+                        }
+                    ),
+                    (
+                        NamedDeclaration {
+                            name: "drunk".to_string(),
+                            kind: DeclarationKind::Scalar(XdrType::UInt),
+                        },
+                        DefinitionSize {
+                            known: 4,
+                            deps: vec!["bar".to_string()],
+                        }
+                    ),
+                ],
+                size: DefinitionSize {
+                    known: 8,
+                    deps: vec!["bar".to_string()],
+                },
+                self_referential_optional: false,
+            }
+        );
+    }
+
+    #[test]
+    fn equal_arm_union() -> Result<(), Box<dyn std::error::Error>> {
+        let xdr = r#"
+            enum PlantKind {
+                Tree = 0,
+                Grass = 1,
+                Flower = 2
+            };
+
+            struct PlantKindButWrapped {
+                PlantKind kind;
+            };
+
+            union Plant switch (PlantKind kind) {
+            case Tree:
+                int a;
+            case Grass:
+                PlantKindButWrapped b;
+            case Flower:
+                PlantKind c;
+            };
+        "#;
+
+        let schema = try_validate(xdr)?;
+
+        assert_eq!(
+            schema.definition_list,
+            vec!["PlantKind", "PlantKindButWrapped", "Plant"]
+        );
+
+        assert_eq!(
+            schema.size_tab.get("PlantKind").unwrap(),
+            &DefinitionSize {
+                known: 4,
+                deps: Vec::new(),
+            }
+        );
+
+        assert_eq!(
+            schema.size_tab.get("PlantKindButWrapped").unwrap(),
+            &DefinitionSize {
+                known: 4,
+                deps: Vec::new(),
+            }
+        );
+
+        assert_eq!(
+            schema.size_tab.get("Plant").unwrap(),
+            &DefinitionSize {
+                known: 4 + 4,
+                deps: Vec::new(),
+            }
+        );
+
+        Ok(())
+    }
+
+    // TODO: missing enum case
+    // TODO: duplicate enum case
+    // TODO: non-void false arm
+    // TODO: void true arm
+    // TODO: unreachable, non-void default arm (warning?)
+    // TODO: fallthrough arms?
+    // TODO: duplicate enum entry (name/value)
+    // TODO: void fields in a struct
+    // TODO: usage before definition
+    // TODO: typedef sizing
+    // TODO: constants used as array sizing
+    // TODO: variable length struct, partially known structs, dependencies
+    // TODO: self-referential-optionals out of place
+    // TODO: variable length, upper bounded length array, sizing
 }
