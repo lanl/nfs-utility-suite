@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright 2025. Triad National Security, LLC.
 
-use std::{
-    cell::RefCell,
-    collections::{HashMap, HashSet},
-};
+use std::collections::{HashMap, HashSet};
 
 use crate::{ast::*, ir::*, symbol_table::*, XdrError};
 
@@ -88,28 +85,23 @@ impl ValidatedSchema {
     /// succesful code generation.
     ///
     /// (For now, it only checks some errors, so finding errors during codegen is still possible.)
-    pub fn validate(schema: Schema) -> crate::Result<ValidatedSchema> {
-        let (mut symbol_table, definition_list) = SymbolTable::new(&schema.definitions);
-
+    pub fn validate(mut schema: Schema) -> crate::Result<ValidatedSchema> {
         let mut size_tab: SizeTab = HashMap::new();
 
-        let mut validated_symbol_table = ValidatedSymbolTable {
-            tab: HashMap::<String, RefCell<ValidatedDefinition>>::new(),
-        };
-        for definition_name in definition_list.into_iter() {
-            if let Some(definition) = symbol_table.tab.remove(&definition_name) {
-                let definition = definition.into_inner();
-                let validated_definition =
-                    definition.validate(&validated_symbol_table, &size_tab)?;
+        let mut validated_symbol_table = ValidatedSymbolTable::new_empty();
+        for definition in schema.definitions.drain(..) {
+            let Some(definition_name) = definition.get_name().map(|v| v.to_string()) else {
+                continue;
+            };
 
-                let size = validated_definition.size(&size_tab, &validated_symbol_table);
+            let validated_definition = definition.validate(&validated_symbol_table, &size_tab)?;
 
-                validated_symbol_table.tab.insert(
-                    definition_name.to_string(),
-                    RefCell::new(validated_definition),
-                );
-                size_tab.insert(definition_name.to_string(), size);
-            }
+            let size = validated_definition.size(&size_tab, &validated_symbol_table);
+
+            validated_symbol_table
+                .tab
+                .insert(definition_name.clone(), validated_definition);
+            size_tab.insert(definition_name, size);
         }
 
         let definition_list = validated_symbol_table.tab.keys().cloned().collect();
@@ -195,7 +187,7 @@ impl Array {
                     Value::Int(val) => *val as usize,
                     Value::Name(name) => {
                         if let Ok(constval) = tab.lookup_definition(name) {
-                            if let ValidatedDefinition::Const(constval) = &*constval {
+                            if let ValidatedDefinition::Const(constval) = constval {
                                 if let Value::Int(intval) = constval.value {
                                     intval as usize
                                 } else {
@@ -380,7 +372,7 @@ impl XdrUnionEnumBody {
             panic!("could not find discriminant \"{}\"", discriminant_name)
         };
 
-        let all_possible: HashSet<String> = match &*discriminant {
+        let all_possible: HashSet<String> = match discriminant {
             ValidatedDefinition::Enum(xdr_enum) => xdr_enum
                 .variants
                 .iter()
