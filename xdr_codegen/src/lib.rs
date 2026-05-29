@@ -3,6 +3,7 @@
 
 mod ast;
 mod codegen;
+mod ir;
 mod parser;
 mod scanner;
 mod symbol_table;

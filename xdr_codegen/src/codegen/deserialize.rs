@@ -4,10 +4,15 @@
 // Deserialization routines for XDR data types.
 
 use super::*;
-use crate::symbol_table::SymbolTable;
+use crate::symbol_table::ValidatedSymbolTable;
 
 impl Array {
-    pub(super) fn deserialize_inline(&self, name: &str, buf: &mut CodeBuf, tab: &SymbolTable) {
+    pub(super) fn deserialize_inline(
+        &self,
+        name: &str,
+        buf: &mut CodeBuf,
+        tab: &ValidatedSymbolTable,
+    ) {
         match &self.size {
             ArraySize::Fixed(_) => {
                 buf.add_line(&format!("let len = {name}.len();"));
@@ -63,7 +68,7 @@ impl NamedDeclaration {
         &self,
         override_name: Option<&str>,
         buf: &mut CodeBuf,
-        tab: &SymbolTable,
+        tab: &ValidatedSymbolTable,
     ) {
         let var_name = match override_name {
             Some(over) => over.to_string(),
@@ -83,14 +88,14 @@ impl NamedDeclaration {
     }
 }
 
-impl XdrUnion {
-    pub(super) fn deserialize_definition(&self, buf: &mut CodeBuf, tab: &SymbolTable) {
+impl ValidatedUnion {
+    pub(super) fn deserialize_definition(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         buf.code_block(
             "pub fn deserialize(&mut self, input: &mut &[u8]) -> Result<(), helpers::DeserializeError>",
             |buf| {
                 match &self.body {
-                    XdrUnionBody::Bool(b) => b.deserialize_bool(buf, tab),
-                    XdrUnionBody::Enum(e) => e.deserialize_enum(buf, tab),
+                    ValidatedUnionBody::Bool(b) => b.deserialize_bool(buf, tab),
+                    ValidatedUnionBody::Enum(e) => e.deserialize_enum(buf, tab),
                 };
                 buf.add_line("Ok(())");
             }
@@ -98,8 +103,8 @@ impl XdrUnion {
     }
 }
 
-impl XdrUnionBoolBody {
-    pub(super) fn deserialize_bool(&self, buf: &mut CodeBuf, tab: &SymbolTable) {
+impl ValidatedUnionBoolBody {
+    pub(super) fn deserialize_bool(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         buf.add_line("let mut discriminant: u32 = 0;");
         buf.add_line("helpers::get_u32(&mut discriminant, input)?;");
         buf.block_statement("match discriminant", |buf| {
@@ -118,15 +123,15 @@ impl XdrUnionBoolBody {
     }
 }
 
-impl XdrUnionEnumBody {
-    pub(super) fn deserialize_enum(&self, buf: &mut CodeBuf, tab: &SymbolTable) {
+impl ValidatedUnionEnumBody {
+    pub(super) fn deserialize_enum(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         buf.add_line("let mut discriminant = 0;");
         buf.add_line("helpers::get_i32(&mut discriminant, input)?;");
         buf.block_statement("*self = match discriminant", |buf| {
             for arm in self.arms.iter() {
                 let discriminant_value = self.get_discriminant_value(&arm.0, tab);
                 buf.code_block(&format!("{discriminant_value} => "), |buf| {
-                    let arm_name = XdrUnionEnumBody::arm_name(&arm.0);
+                    let arm_name = ValidatedUnionEnumBody::arm_name(&arm.0);
                     match &arm.1 {
                         Declaration::Void => {
                             buf.add_line(&format!("Self::{arm_name}"));
@@ -159,12 +164,12 @@ impl XdrUnionEnumBody {
     }
 }
 
-impl XdrStruct {
-    pub(super) fn deserialize_definition(&self, buf: &mut CodeBuf, tab: &SymbolTable) {
+impl ValidatedStruct {
+    pub(super) fn deserialize_definition(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         buf.code_block(
             "pub fn deserialize(&mut self, input: &mut &[u8]) -> Result<(), helpers::DeserializeError>",
             |buf| {
-                for decl in self.members.iter() {
+                for (decl, _) in self.members.iter() {
                     buf.add_line(&format!("// {}:", decl.name));
                     decl.deserialize_inline(None, buf, tab);
                 }
@@ -174,8 +179,8 @@ impl XdrStruct {
     }
 }
 
-impl XdrEnum {
-    pub(super) fn deserialize_definition(&self, buf: &mut CodeBuf, tab: &SymbolTable) {
+impl ValidatedEnum {
+    pub(super) fn deserialize_definition(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         buf.code_block(
             "pub fn deserialize(&mut self, input: &mut &[u8]) -> Result<(), helpers::DeserializeError>",
             |buf| {
@@ -195,11 +200,16 @@ impl XdrEnum {
 }
 
 impl XdrType {
-    pub(super) fn deserialize_inline(&self, var_name: &str, buf: &mut CodeBuf, tab: &SymbolTable) {
+    pub(super) fn deserialize_inline(
+        &self,
+        var_name: &str,
+        buf: &mut CodeBuf,
+        tab: &ValidatedSymbolTable,
+    ) {
         // Handle typedefs specially by finding their underlying type:
         if let XdrType::Name(name) = self {
             let definition = tab.lookup_definition(name).unwrap();
-            if let Definition::TypeDef(ref tdef) = *definition {
+            if let ValidatedDefinition::TypeDef(ref tdef) = *definition {
                 match &tdef.decl {
                     Declaration::Void => panic!("Void typedefs are not currently supported"),
                     Declaration::Named(n) => n.deserialize_inline(Some(var_name), buf, tab),
@@ -231,7 +241,7 @@ impl XdrType {
         &self,
         name: &str,
         buf: &mut CodeBuf,
-        tab: &SymbolTable,
+        tab: &ValidatedSymbolTable,
     ) {
         if self.self_referential_optional(tab) {
             buf.code_block("loop", |buf| {

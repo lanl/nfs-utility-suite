@@ -1,9 +1,6 @@
-struct Foo {
-	int a;
-	Bar blah;
-	unsigned int b;
-	bool no;
-	bool yes;
+struct Another {
+	hyper x;
+	unsigned hyper y;
 };
 
 struct Bar {
@@ -12,7 +9,10 @@ struct Bar {
 	int b;
 };
 
-struct Another {
-	hyper x;
-	unsigned hyper y;
+struct Foo {
+	int a;
+	Bar blah;
+	unsigned int b;
+	bool no;
+	bool yes;
 };

@@ -168,7 +168,7 @@ impl<'src> Parser<'src> {
             TokenKind::Struct => {
                 let name = self.expect_identifier("Expected identifier in struct definition");
                 let members = self.xdr_struct_body();
-                Definition::Struct(XdrStruct { name, members, self_referential_optional: false })
+                Definition::Struct(XdrStruct { name, members })
             }
             TokenKind::Enum => {
                 let name = self.expect_identifier("Expected identifier in enum definition");

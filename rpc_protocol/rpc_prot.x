@@ -53,6 +53,15 @@ enum AuthStat {
     RpcsecGssCtxProblem =  14
 };
 
+struct CallBody {
+   unsigned int rpcvers;
+   unsigned int prog;
+   unsigned int vers;
+   unsigned int proc;
+   OpaqueAuth cred;
+   OpaqueAuth verf;
+};
+
 union RpcMessageBody switch (MessageType mtype) {
 case Call:
     CallBody cbody;
@@ -63,22 +72,6 @@ case Reply:
 struct RpcMessage {
     unsigned int xid;
     RpcMessageBody body;
-};
-
-struct CallBody {
-   unsigned int rpcvers;
-   unsigned int prog;
-   unsigned int vers;
-   unsigned int proc;
-   OpaqueAuth cred;
-   OpaqueAuth verf;
-};
-
-union ReplyBody switch (ReplyStatus stat) {
-case Accepted:
-    AcceptedReply areply;
-case Denied:
-    RejectedReply rreply;
 };
 
 struct ProgMismatchBody {
@@ -104,6 +97,13 @@ case SystemErr:
 struct AcceptedReply {
     OpaqueAuth verf;
     AcceptedReplyBody reply_data;
+};
+
+union ReplyBody switch (ReplyStatus stat) {
+case Accepted:
+    AcceptedReply areply;
+case Denied:
+    RejectedReply rreply;
 };
 
 struct RpcMismatchBody {
