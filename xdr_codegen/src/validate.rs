@@ -1,13 +1,22 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright 2025. Triad National Security, LLC.
 
-use std::collections::{HashMap, HashSet};
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+};
 
 use crate::{ast::*, ir::*, symbol_table::*, XdrError};
+
+pub type SizeTab = HashMap<String, DefinitionSize>;
 
 pub struct ValidatedSchema {
     /// This owns the definitions of the... definitions.
     pub symbol_table: ValidatedSymbolTable,
+
+    /// Contains the sizes of definitions in the schema.
+    #[allow(dead_code)]
+    pub size_tab: SizeTab,
 
     /// This list exists so that codegen can output code for types in the same order as those types
     /// appear in the source. The `String`s are keys into the `symbol_table`.
@@ -17,98 +26,114 @@ pub struct ValidatedSchema {
     pub contains_string: bool,
 }
 
+impl ValidatedDefinition {
+    pub fn size(
+        &self,
+        size_tab: &SizeTab,
+        validated_symbol_table: &ValidatedSymbolTable,
+    ) -> DefinitionSize {
+        match self {
+            ValidatedDefinition::Const(_) => DefinitionSize {
+                known: 4,
+                deps: Vec::new(),
+            },
+            ValidatedDefinition::TypeDef(xdr_type_def) => match &xdr_type_def.decl {
+                Declaration::Named(named_declaration) => match &named_declaration.kind {
+                    DeclarationKind::Scalar(xdr_type) => {
+                        if let Some(size) = xdr_type.size(size_tab) {
+                            DefinitionSize {
+                                known: size,
+                                deps: Vec::new(),
+                            }
+                        } else {
+                            DefinitionSize {
+                                known: 0,
+                                deps: vec![named_declaration.name.clone()],
+                            }
+                        }
+                    }
+                    DeclarationKind::Array(array) => {
+                        let arr_size = array.size(validated_symbol_table, size_tab);
+                        if let Some(arr_size) = arr_size {
+                            DefinitionSize {
+                                known: arr_size,
+                                deps: Vec::new(),
+                            }
+                        } else {
+                            DefinitionSize {
+                                known: 0,
+                                deps: vec![named_declaration.name.clone()],
+                            }
+                        }
+                    }
+                    DeclarationKind::Optional(_) => DefinitionSize {
+                        known: 0,
+                        deps: vec![named_declaration.name.clone()],
+                    },
+                },
+                Declaration::Void => panic!("encountered null typedef"),
+            },
+            ValidatedDefinition::Struct(validated_struct) => validated_struct.size.clone(),
+            ValidatedDefinition::Enum(_) => DefinitionSize {
+                known: 4,
+                deps: Vec::new(),
+            },
+            ValidatedDefinition::Union(validated_union) => validated_union.size.clone(),
+        }
+    }
+}
+
 impl ValidatedSchema {
     /// Validate a schema, eventually ensuring that it doesn't have any errors that would prevent
     /// succesful code generation.
     ///
     /// (For now, it only checks some errors, so finding errors during codegen is still possible.)
     pub fn validate(schema: Schema) -> crate::Result<ValidatedSchema> {
-        let (symbol_table, definition_list) = SymbolTable::new(&schema.definitions);
+        let (mut symbol_table, definition_list) = SymbolTable::new(&schema.definitions);
 
-        let mut size_tab: HashMap<String, DefinitionSize> = HashMap::new();
+        let mut size_tab: SizeTab = HashMap::new();
 
-        let mut validated_definitions: Vec<ValidatedDefinition> = Vec::new();
-        for definition_name in definition_list.iter() {
-            if let Some(definition) = symbol_table.tab.get(definition_name) {
-                let res = definition.borrow_mut().validate(&symbol_table, &size_tab)?;
-                let size = match &res {
-                    ValidatedDefinition::Const(_) => DefinitionSize {
-                        known: 4,
-                        deps: Vec::new(),
-                    },
-                    ValidatedDefinition::TypeDef(xdr_type_def) => match &xdr_type_def.decl {
-                        Declaration::Named(named_declaration) => match &named_declaration.kind {
-                            DeclarationKind::Scalar(xdr_type) => {
-                                if let Some(size) = xdr_type.size(&size_tab) {
-                                    DefinitionSize {
-                                        known: size,
-                                        deps: Vec::new(),
-                                    }
-                                } else {
-                                    DefinitionSize {
-                                        known: 0,
-                                        deps: vec![named_declaration.name.clone()],
-                                    }
-                                }
-                            }
-                            DeclarationKind::Array(array) => {
-                                let arr_size = array.size(&symbol_table, &size_tab);
-                                if let Some(arr_size) = arr_size {
-                                    DefinitionSize {
-                                        known: arr_size,
-                                        deps: Vec::new(),
-                                    }
-                                } else {
-                                    DefinitionSize {
-                                        known: 0,
-                                        deps: vec![named_declaration.name.clone()],
-                                    }
-                                }
-                            }
-                            DeclarationKind::Optional(_) => DefinitionSize {
-                                known: 0,
-                                deps: vec![named_declaration.name.clone()],
-                            },
-                        },
-                        Declaration::Void => panic!("encountered null typedef"),
-                    },
-                    ValidatedDefinition::Struct(validated_struct) => validated_struct.size.clone(),
-                    ValidatedDefinition::Enum(_) => DefinitionSize {
-                        known: 4,
-                        deps: Vec::new(),
-                    },
-                    ValidatedDefinition::Union(validated_union) => validated_union.size.clone(),
-                };
+        let mut validated_symbol_table = ValidatedSymbolTable {
+            tab: HashMap::<String, RefCell<ValidatedDefinition>>::new(),
+        };
+        for definition_name in definition_list.into_iter() {
+            if let Some(definition) = symbol_table.tab.remove(&definition_name) {
+                let definition = definition.into_inner();
+                let validated_definition =
+                    definition.validate(&validated_symbol_table, &size_tab)?;
 
-                validated_definitions.push(res.clone());
+                let size = validated_definition.size(&size_tab, &validated_symbol_table);
 
-                size_tab.insert(definition_name.to_string(), size.clone());
+                validated_symbol_table.tab.insert(
+                    definition_name.to_string(),
+                    RefCell::new(validated_definition),
+                );
+                size_tab.insert(definition_name.to_string(), size);
             }
         }
 
-        let (validated_symbol_table, definition_list) =
-            ValidatedSymbolTable::new(&validated_definitions);
-
+        let definition_list = validated_symbol_table.tab.keys().cloned().collect();
         Ok(ValidatedSchema {
             symbol_table: validated_symbol_table,
             definition_list,
             programs: schema.programs,
             contains_string: schema.contains_string,
+            size_tab,
         })
     }
 }
 
 impl Definition {
     fn validate(
-        &self,
-        tab: &SymbolTable,
-        size_tab: &HashMap<String, DefinitionSize>,
+        self,
+        tab: &ValidatedSymbolTable,
+        size_tab: &SizeTab,
     ) -> crate::Result<ValidatedDefinition> {
         let ret = match self {
             Definition::Const(cdef) => match cdef.value {
                 Value::Int(_) => ValidatedDefinition::Const(ConstDefinition {
-                    name: cdef.name.clone(),
-                    value: cdef.value.clone(),
+                    name: cdef.name,
+                    value: cdef.value,
                 }),
                 Value::Name(_) => {
                     panic!(
@@ -117,22 +142,24 @@ impl Definition {
                     )
                 }
             },
-            Definition::TypeDef(td) => ValidatedDefinition::TypeDef(XdrTypeDef {
-                decl: td.decl.clone(),
-            }),
+            Definition::TypeDef(td) => ValidatedDefinition::TypeDef(XdrTypeDef { decl: td.decl }),
             Definition::Struct(s) => ValidatedDefinition::Struct(s.validate(tab, size_tab)?),
             Definition::Enum(e) => ValidatedDefinition::Enum(ValidatedEnum {
-                name: e.name.clone(),
-                variants: e.variants.clone(),
+                name: e.name,
+                variants: e.variants,
                 size: DefinitionSize {
                     known: 4,
                     deps: Vec::new(),
                 },
             }),
-            Definition::Union(u) => match &u.body {
-                XdrUnionBody::Bool(body) => body.validate(u, tab, size_tab),
-                XdrUnionBody::Enum(body) => body.validate(u, tab, size_tab),
-            },
+            Definition::Union(u) => {
+                let name = u.name;
+                let body = u.body;
+                match body {
+                    XdrUnionBody::Bool(body) => body.validate(name, tab, size_tab),
+                    XdrUnionBody::Enum(body) => body.validate(name, tab, size_tab),
+                }
+            }
         };
 
         Ok(ret)
@@ -140,7 +167,7 @@ impl Definition {
 }
 
 impl XdrType {
-    fn size(&self, size_tab: &HashMap<String, DefinitionSize>) -> Option<usize> {
+    fn size(&self, size_tab: &SizeTab) -> Option<usize> {
         match self {
             XdrType::Int | XdrType::UInt | XdrType::Float | XdrType::Bool => Some(4),
             XdrType::Hyper | XdrType::UHyper | XdrType::Double => Some(8),
@@ -161,14 +188,14 @@ impl XdrType {
 }
 
 impl Array {
-    fn size(&self, tab: &SymbolTable, size_tab: &HashMap<String, DefinitionSize>) -> Option<usize> {
+    fn size(&self, tab: &ValidatedSymbolTable, size_tab: &SizeTab) -> Option<usize> {
         match &self.size {
             ArraySize::Fixed(value) => {
                 let count = match value {
                     Value::Int(val) => *val as usize,
                     Value::Name(name) => {
                         if let Ok(constval) = tab.lookup_definition(name) {
-                            if let Definition::Const(constval) = &*constval {
+                            if let ValidatedDefinition::Const(constval) = &*constval {
                                 if let Value::Int(intval) = constval.value {
                                     intval as usize
                                 } else {
@@ -203,7 +230,7 @@ impl Declaration {
         }
     }
 
-    fn size(&self, tab: &SymbolTable, size_tab: &HashMap<String, DefinitionSize>) -> Option<usize> {
+    fn size(&self, tab: &ValidatedSymbolTable, size_tab: &SizeTab) -> Option<usize> {
         if let Declaration::Named(m) = self {
             m.size(tab, size_tab)
         } else {
@@ -213,7 +240,7 @@ impl Declaration {
 }
 
 impl NamedDeclaration {
-    fn size(&self, tab: &SymbolTable, size_tab: &HashMap<String, DefinitionSize>) -> Option<usize> {
+    fn size(&self, tab: &ValidatedSymbolTable, size_tab: &SizeTab) -> Option<usize> {
         match &self.kind {
             DeclarationKind::Scalar(xdr_type) => xdr_type.size(size_tab),
             DeclarationKind::Array(array) => array.size(tab, size_tab),
@@ -236,35 +263,32 @@ impl HasName for ValidatedDefinition {
 
 impl XdrStruct {
     fn validate(
-        &self,
-        tab: &SymbolTable,
-        size_tab: &HashMap<String, DefinitionSize>,
+        mut self,
+        tab: &ValidatedSymbolTable,
+        size_tab: &SizeTab,
     ) -> crate::Result<ValidatedStruct> {
         // if the last member is a self referential optional, we can remove it
-        let (has_self_reference, members) = if self.self_referential_optional(tab)? {
-            (true, self.members[..self.members.len() - 1].to_vec())
-        } else {
-            (false, self.members.clone())
-        };
+        let has_self_reference = self.self_referential_optional(tab)?;
+        if has_self_reference {
+            self.members.pop();
+        }
 
         let mut s = DefinitionSize {
             known: 0,
             deps: Vec::new(),
         };
 
-        let members: Vec<(NamedDeclaration, DefinitionOffset)> = members
-            .iter()
+        let members: Vec<(NamedDeclaration, DefinitionOffset)> = self
+            .members
+            .drain(..)
             .map(|m| {
-                let name: String = m.name.clone();
-
                 let m_size: Option<usize> = m.size(tab, size_tab);
-
-                let ret = (m.clone(), s.clone());
+                let ret = (m, s.clone());
 
                 if let Some(m_size) = m_size {
                     s.known += m_size;
                 } else {
-                    s.deps.push(name);
+                    s.deps.push(ret.0.name.clone());
                 }
 
                 ret
@@ -272,9 +296,9 @@ impl XdrStruct {
             .collect();
 
         Ok(ValidatedStruct {
-            name: self.name.clone(),
+            name: self.name,
             members,
-            size: s.clone(),
+            size: s,
             self_referential_optional: has_self_reference,
         })
     }
@@ -291,7 +315,7 @@ impl XdrStruct {
     /// the struct. If such a member occurred in the middle of a struct, it would complicate
     /// correct [de]seriailizing, but I've never seen such a struct in an actual protocol
     /// definition, so simply don't allow it.
-    fn self_referential_optional(&self, tab: &SymbolTable) -> crate::Result<bool> {
+    fn self_referential_optional(&self, tab: &ValidatedSymbolTable) -> crate::Result<bool> {
         let mut self_referential_optional = false;
         for member in self.members.iter() {
             if self_referential_optional {
@@ -308,10 +332,10 @@ impl XdrStruct {
 
 impl XdrUnionBoolBody {
     fn validate(
-        &self,
-        u: &XdrUnion,
-        _tab: &SymbolTable,
-        _size_tab: &HashMap<String, DefinitionSize>,
+        self,
+        u_name: String,
+        _tab: &ValidatedSymbolTable,
+        _size_tab: &SizeTab,
     ) -> ValidatedDefinition {
         let arm_names: Vec<String> = [self.true_arm.name(), self.false_arm.name()]
             .iter()
@@ -322,10 +346,10 @@ impl XdrUnionBoolBody {
         // bool union body size is never known as there is always a void member and a non void
         // member
         ValidatedDefinition::Union(ValidatedUnion {
-            name: u.name.clone(),
+            name: u_name,
             body: ValidatedUnionBody::Bool(ValidatedUnionBoolBody {
-                true_arm: self.true_arm.clone(),
-                false_arm: self.false_arm.clone(),
+                true_arm: self.true_arm,
+                false_arm: self.false_arm,
                 size: DefinitionSize {
                     known: 0,
                     deps: arm_names.clone(),
@@ -341,10 +365,10 @@ impl XdrUnionBoolBody {
 
 impl XdrUnionEnumBody {
     fn validate(
-        &self,
-        u: &XdrUnion,
-        tab: &SymbolTable,
-        size_tab: &HashMap<String, DefinitionSize>,
+        self,
+        u_name: String,
+        tab: &ValidatedSymbolTable,
+        size_tab: &SizeTab,
     ) -> ValidatedDefinition {
         let mut arms_iter = self.arms.iter();
 
@@ -357,7 +381,7 @@ impl XdrUnionEnumBody {
         };
 
         let all_possible: HashSet<String> = match &*discriminant {
-            Definition::Enum(xdr_enum) => xdr_enum
+            ValidatedDefinition::Enum(xdr_enum) => xdr_enum
                 .variants
                 .iter()
                 .map(|(var_name, _)| var_name.clone())
@@ -373,21 +397,21 @@ impl XdrUnionEnumBody {
                 Value::Int(_) => {
                     todo!(
                         "{}: we currently do not support integer values in enum unions",
-                        u.name
+                        u_name
                     )
                 }
                 Value::Name(value_name) => {
                     if !all_possible.contains(value_name) {
                         panic!(
                             "{}: unknown enum type for {}: {}",
-                            u.name, discriminant_name, value_name
+                            u_name, discriminant_name, value_name
                         )
                     }
 
                     if !left.remove(value_name) {
                         panic!(
                             "{}: enum variant {}::{} seems to be a duplicate case",
-                            u.name, discriminant_name, value_name
+                            u_name, discriminant_name, value_name
                         )
                     }
                 }
@@ -425,7 +449,7 @@ impl XdrUnionEnumBody {
                     }
                 }
                 None => {
-                    panic!("union {} does not have any arms!", u.name)
+                    panic!("union {} does not have any arms!", u_name)
                 }
             }
         };
@@ -445,11 +469,11 @@ impl XdrUnionEnumBody {
         };
 
         ValidatedDefinition::Union(ValidatedUnion {
-            name: u.name.clone(),
+            name: u_name,
             body: ValidatedUnionBody::Enum(ValidatedUnionEnumBody {
-                discriminant: self.discriminant.clone(),
-                arms: self.arms.clone(),
-                default_arm: self.default_arm.clone(),
+                discriminant: self.discriminant,
+                arms: self.arms,
+                default_arm: self.default_arm,
                 size: DefinitionSize {
                     known,
                     deps: deps.clone(),
@@ -470,7 +494,7 @@ impl XdrUnionEnumBody {
 fn is_declaration_option_of_name(
     outer_name: &str,
     n: &NamedDeclaration,
-    tab: &SymbolTable,
+    tab: &ValidatedSymbolTable,
 ) -> bool {
     match &n.kind {
         DeclarationKind::Optional(ty) => {
@@ -487,7 +511,7 @@ fn is_declaration_option_of_name(
                 return false;
             };
             let def = tab.lookup_definition(name).expect("Undefined name");
-            let Definition::TypeDef(ref typedef) = *def else {
+            let ValidatedDefinition::TypeDef(ref typedef) = *def else {
                 return false;
             };
             let Declaration::Named(ref n) = typedef.decl else {
