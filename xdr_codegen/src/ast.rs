@@ -48,15 +48,15 @@ pub enum Definition {
     Union(XdrUnion),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ConstDefinition {
     pub name: String,
     pub value: Value,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct XdrTypeDef {
-    pub decl: Declaration,
+    pub decl: NamedDeclaration,
 }
 
 /// For strings that are not used for their own value, but to resolve to another type.
@@ -90,10 +90,6 @@ pub struct XdrStruct {
     // TODO: store snake_case -> CameCase transformed name...
     pub name: String,
     pub members: Vec<NamedDeclaration>,
-
-    /// Structs that have an optional "pointer" to themselves at the end need special handling
-    /// during codegen. This field is filled in during Schema::validate().
-    pub self_referential_optional: bool,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -187,4 +183,16 @@ pub enum DeclarationKind {
     Scalar(XdrType),
     Array(Array),
     Optional(XdrType),
+}
+
+impl Definition {
+    pub fn get_name(&self) -> &str {
+        match self {
+            Definition::Const(d) => &d.name,
+            Definition::TypeDef(d) => &d.decl.name,
+            Definition::Struct(d) => &d.name,
+            Definition::Enum(d) => &d.name,
+            Definition::Union(d) => &d.name,
+        }
+    }
 }

@@ -53,3 +53,20 @@ case two:
 case three:
     Plant plant;
 };
+
+struct SameWidthDifferentStuff {
+    int a;
+    int b;
+    int c;
+};
+
+union StuffOrPlant2 switch (Cases hello) {
+case one:
+    Stuff things;
+case two:
+    SameWidthDifferentStuff differentThings;
+case three:
+    Stuff sameThings;
+default:
+    Cases dead;
+};

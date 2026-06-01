@@ -4,7 +4,7 @@
 // Allocating serialization routines for XDR data types.
 
 use super::*;
-use crate::symbol_table::SymbolTable;
+use crate::symbol_table::ValidatedSymbolTable;
 
 impl Array {
     pub(super) fn serialize_inline(
@@ -12,7 +12,7 @@ impl Array {
         name: &str,
         context: Context,
         buf: &mut CodeBuf,
-        tab: &SymbolTable,
+        tab: &ValidatedSymbolTable,
     ) {
         match &self.size {
             ArraySize::Fixed(_) => {} // Fixed-size array does not need length encoded
@@ -65,7 +65,7 @@ impl NamedDeclaration {
         override_name: Option<&str>,
         context: Context,
         buf: &mut CodeBuf,
-        tab: &SymbolTable,
+        tab: &ValidatedSymbolTable,
     ) {
         let var_name = match override_name {
             Some(over) => over.to_string(),
@@ -85,20 +85,20 @@ impl NamedDeclaration {
     }
 }
 
-impl XdrUnion {
-    pub(super) fn serialize_definition(&self, buf: &mut CodeBuf, tab: &SymbolTable) {
+impl ValidatedUnion {
+    pub(super) fn serialize_definition(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         buf.code_block(
             "pub fn serialize_alloc(&self) -> Vec<u8>",
             |buf| match &self.body {
-                XdrUnionBody::Bool(b) => b.serialize_bool(buf, tab),
-                XdrUnionBody::Enum(e) => e.serialize_enum(buf, tab, true),
+                ValidatedUnionBody::Bool(b) => b.serialize_bool(buf, tab),
+                ValidatedUnionBody::Enum(e) => e.serialize_enum(buf, tab, true),
             },
         );
     }
 }
 
-impl XdrUnionBoolBody {
-    fn serialize_bool(&self, buf: &mut CodeBuf, tab: &SymbolTable) {
+impl ValidatedUnionBoolBody {
+    fn serialize_bool(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         buf.code_block("match &self.inner", |buf| {
             buf.code_block("Some(val) => ", |buf| {
                 buf.add_line("let mut buf = 1_u32.to_be_bytes().to_vec();");
@@ -117,11 +117,11 @@ impl XdrUnionBoolBody {
     }
 }
 
-impl XdrStruct {
-    pub(super) fn serialize_definition(&self, buf: &mut CodeBuf, tab: &SymbolTable) {
+impl ValidatedStruct {
+    pub(super) fn serialize_definition(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         buf.code_block("pub fn serialize_alloc(&self) -> Vec<u8>", |buf| {
             buf.add_line("let mut buf = Vec::new();");
-            for decl in self.members.iter() {
+            for (decl, _) in self.members.iter() {
                 buf.add_line(&format!("// {}:", decl.name));
                 decl.serialize_inline(None, Context::NotInUnion, buf, tab);
             }
@@ -130,8 +130,8 @@ impl XdrStruct {
     }
 }
 
-impl XdrEnum {
-    pub(super) fn serialize_definition(&self, buf: &mut CodeBuf, tab: &SymbolTable) {
+impl ValidatedEnum {
+    pub(super) fn serialize_definition(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         buf.code_block("pub fn serialize_alloc(&self) -> Vec<u8>", |buf| {
             buf.block_statement("let val: i32 = match self", |buf| {
                 for variant in self.variants.iter() {
@@ -150,16 +150,14 @@ impl XdrType {
         var_name: &str,
         context: Context,
         buf: &mut CodeBuf,
-        tab: &SymbolTable,
+        tab: &ValidatedSymbolTable,
     ) {
         // Handle typedefs specially by finding their underlying type:
         if let XdrType::Name(name) = self {
-            let definition = tab.lookup_definition(name).unwrap();
-            if let Definition::TypeDef(ref tdef) = *definition {
-                match &tdef.decl {
-                    Declaration::Void => panic!("Void typedefs are not currently supported"),
-                    Declaration::Named(n) => n.serialize_inline(Some(var_name), context, buf, tab),
-                };
+            let definition = tab.lookup_definition_infallible(name);
+            if let ValidatedDefinition::TypeDef(ref tdef) = *definition {
+                tdef.decl
+                    .serialize_inline(Some(var_name), context, buf, tab);
                 return;
             };
         };
@@ -175,7 +173,7 @@ impl XdrType {
         name: &str,
         context: Context,
         buf: &mut CodeBuf,
-        tab: &SymbolTable,
+        tab: &ValidatedSymbolTable,
     ) {
         if self.self_referential_optional(tab) {
             buf.code_block(&format!("for item in {name}.iter()"), |buf| {

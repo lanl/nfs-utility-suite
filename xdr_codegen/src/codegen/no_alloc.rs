@@ -4,10 +4,10 @@
 // Non-allocating serialization routines for XDR data types.
 
 use super::*;
-use crate::symbol_table::SymbolTable;
+use crate::symbol_table::ValidatedSymbolTable;
 
-impl XdrStruct {
-    /// Output a non-allocating serialization routine for this XdrStruct.
+impl ValidatedStruct {
+    /// Output a non-allocating serialization routine for this ValidatedStruct.
     ///
     /// Given:
     ///     struct Foo {
@@ -18,10 +18,10 @@ impl XdrStruct {
     ///     pub fn serialize(&self, buf: &mut [u8]) -> usize {
     ///         ...
     ///     }
-    pub(super) fn serialize_no_alloc(&self, buf: &mut CodeBuf, tab: &SymbolTable) {
+    pub(super) fn serialize_no_alloc(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         buf.code_block("pub fn serialize(&self, buf: &mut [u8]) -> usize", |buf| {
             buf.add_line("let mut offset = 0;");
-            for decl in &self.members {
+            for (decl, _) in &self.members {
                 buf.add_line(&format!("// {}:", decl.name));
                 decl.serialize_no_alloc_inline(None, buf, tab);
             }
@@ -30,21 +30,21 @@ impl XdrStruct {
     }
 }
 
-impl XdrUnion {
-    pub(super) fn serialize_no_alloc(&self, buf: &mut CodeBuf, tab: &SymbolTable) {
+impl ValidatedUnion {
+    pub(super) fn serialize_no_alloc(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         buf.code_block("pub fn serialize(&self, buf: &mut [u8]) -> usize", |buf| {
             buf.add_line("let mut offset = 0;");
             match &self.body {
-                XdrUnionBody::Bool(b) => b.serialize_no_alloc(buf, tab),
-                XdrUnionBody::Enum(b) => b.serialize_enum(buf, tab, false),
+                ValidatedUnionBody::Bool(b) => b.serialize_no_alloc(buf, tab),
+                ValidatedUnionBody::Enum(b) => b.serialize_enum(buf, tab, false),
             };
             buf.add_line("offset");
         });
     }
 }
 
-impl XdrUnionBoolBody {
-    fn serialize_no_alloc(&self, buf: &mut CodeBuf, tab: &SymbolTable) {
+impl ValidatedUnionBoolBody {
+    fn serialize_no_alloc(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         buf.code_block("match &self.inner", |buf| {
             buf.code_block("Some(val) => ", |buf| {
                 buf.serialize_int(1);
@@ -60,8 +60,8 @@ impl XdrUnionBoolBody {
     }
 }
 
-impl XdrEnum {
-    pub(super) fn serialize_no_alloc(&self, buf: &mut CodeBuf, tab: &SymbolTable) {
+impl ValidatedEnum {
+    pub(super) fn serialize_no_alloc(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         buf.code_block("pub fn serialize(&self, buf: &mut [u8]) -> usize", |buf| {
             buf.add_line("let mut offset = 0;");
             buf.block_statement("let val: i32 = match self", |buf| {
@@ -90,7 +90,7 @@ impl NamedDeclaration {
         &self,
         override_name: Option<&str>,
         buf: &mut CodeBuf,
-        tab: &SymbolTable,
+        tab: &ValidatedSymbolTable,
     ) {
         let var_name = match override_name {
             Some(name) => name.to_string(),
@@ -107,7 +107,12 @@ impl NamedDeclaration {
 }
 
 impl Array {
-    fn serialize_no_alloc_inline(&self, var_name: &str, buf: &mut CodeBuf, tab: &SymbolTable) {
+    fn serialize_no_alloc_inline(
+        &self,
+        var_name: &str,
+        buf: &mut CodeBuf,
+        tab: &ValidatedSymbolTable,
+    ) {
         self.encode_size(var_name, buf, tab);
 
         if let ArrayKind::UserType(ty) = &self.kind {
@@ -140,7 +145,7 @@ impl Array {
     ///
     /// For limited-size arrays, this adds an assert that the user does not try to encode an array
     /// exceeding the limit.
-    fn encode_size(&self, var_name: &str, buf: &mut CodeBuf, tab: &SymbolTable) {
+    fn encode_size(&self, var_name: &str, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         match &self.size {
             // The length of a fixed-length array does not need to be encoded.
             ArraySize::Fixed(_) => return,
@@ -160,17 +165,18 @@ impl Array {
 }
 
 impl XdrType {
-    fn serialize_no_alloc_inline(&self, var_name: &str, buf: &mut CodeBuf, tab: &SymbolTable) {
+    fn serialize_no_alloc_inline(
+        &self,
+        var_name: &str,
+        buf: &mut CodeBuf,
+        tab: &ValidatedSymbolTable,
+    ) {
         match self {
             XdrType::Name(name) => {
-                let definition = tab.lookup_definition(name).unwrap();
-                if let Definition::TypeDef(ref tdef) = *definition {
-                    match &tdef.decl {
-                        Declaration::Void => panic!("Void typedefs are not currently supported"),
-                        Declaration::Named(n) => {
-                            n.serialize_no_alloc_inline(Some(var_name), buf, tab)
-                        }
-                    };
+                let definition = tab.lookup_definition_infallible(name);
+                if let ValidatedDefinition::TypeDef(ref tdef) = *definition {
+                    tdef.decl
+                        .serialize_no_alloc_inline(Some(var_name), buf, tab);
                     return;
                 };
 
@@ -191,7 +197,12 @@ impl XdrType {
         };
     }
 
-    fn serialize_optional_no_alloc_inline(&self, name: &str, buf: &mut CodeBuf, tab: &SymbolTable) {
+    fn serialize_optional_no_alloc_inline(
+        &self,
+        name: &str,
+        buf: &mut CodeBuf,
+        tab: &ValidatedSymbolTable,
+    ) {
         if self.self_referential_optional(tab) {
             buf.code_block(&format!("for item in {name}.iter()"), |buf| {
                 buf.serialize_int(1);

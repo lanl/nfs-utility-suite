@@ -5,7 +5,8 @@
 // and de-serialization routines.
 
 use crate::ast::*;
-use crate::symbol_table::SymbolTable;
+use crate::ir::*;
+use crate::symbol_table::ValidatedSymbolTable;
 use crate::validate::*;
 
 mod alloc;
@@ -142,18 +143,12 @@ pub fn codegen(schema: &ValidatedSchema, module_name: &str, params: &Params) -> 
         }
 
         for def in schema.definition_list.iter() {
-            let def = schema
-                .symbol_table
-                .lookup_definition(def)
-                .expect("Undefined name");
+            let def = schema.symbol_table.lookup_definition_infallible(def);
             def.definition(buf, &schema.symbol_table);
         }
 
         for def in schema.definition_list.iter() {
-            let def = schema
-                .symbol_table
-                .lookup_definition(def)
-                .expect("Undefined name");
+            let def = schema.symbol_table.lookup_definition_infallible(def);
             def.implementation(buf, &schema.symbol_table, params);
         }
 
@@ -192,11 +187,11 @@ impl Program {
     }
 }
 
-impl Definition {
+impl ValidatedDefinition {
     /// The definition for the type.
-    fn definition(&self, buf: &mut CodeBuf, tab: &SymbolTable) {
+    fn definition(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         match self {
-            Definition::Const(c) => {
+            ValidatedDefinition::Const(c) => {
                 match &c.value {
                     Value::Int(n) => {
                         buf.add_line(&format!(
@@ -210,32 +205,32 @@ impl Definition {
                     }
                 };
             }
-            Definition::Enum(e) => {
+            ValidatedDefinition::Enum(e) => {
                 e.definition(buf);
             }
-            Definition::Struct(s) => {
+            ValidatedDefinition::Struct(s) => {
                 s.definition(buf, tab);
             }
-            Definition::TypeDef(_) => {}
-            Definition::Union(u) => {
+            ValidatedDefinition::TypeDef(_) => {}
+            ValidatedDefinition::Union(u) => {
                 u.definition(buf, tab);
             }
         }
     }
 
     /// The impl block for the type, including its serialize and deserialize methods.
-    fn implementation(&self, buf: &mut CodeBuf, tab: &SymbolTable, params: &Params) {
+    fn implementation(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable, params: &Params) {
         match self {
-            Definition::Enum(e) => {
+            ValidatedDefinition::Enum(e) => {
                 e.codegen(buf, tab, params);
             }
-            Definition::Struct(s) => {
+            ValidatedDefinition::Struct(s) => {
                 s.codegen(buf, tab, params);
             }
-            Definition::Union(u) => {
+            ValidatedDefinition::Union(u) => {
                 u.codegen(buf, tab, params);
             }
-            Definition::TypeDef(_) | Definition::Const(_) => {}
+            ValidatedDefinition::TypeDef(_) | ValidatedDefinition::Const(_) => {}
         }
     }
 
@@ -246,55 +241,46 @@ impl Definition {
     ///
     /// For example:
     ///
-    ///    Definition                      Result
+    ///    ValidatedDefinition                      Result
     ///
     ///    const FOO = 2;                  2
     ///    typedef unsigned long uint32;   u32
     ///    typedef uid3 uint32             u32     (resolves via above typedef)
     ///    struct blah { /* ... */ };      blah
-    fn as_type_name(&self, tab: &SymbolTable) -> String {
+    fn as_type_name(&self, tab: &ValidatedSymbolTable) -> String {
         match self {
-            Definition::Struct(s) => s.name.to_string(),
-            Definition::Enum(e) => e.name.to_string(),
-            Definition::Union(u) => u.name.to_string(),
-            Definition::Const(c) => c.value.as_type_name(tab),
-            Definition::TypeDef(t) => match &t.decl {
-                Declaration::Named(n) => match &n.kind {
-                    DeclarationKind::Scalar(ty) => ty.as_type_name(tab),
-                    DeclarationKind::Optional(o) => o.optional_type_name(tab),
-                    DeclarationKind::Array(arr) => arr.as_type_name(tab),
-                },
-                Declaration::Void => panic!("not supporting void in typedef..."),
+            ValidatedDefinition::Struct(s) => s.name.to_string(),
+            ValidatedDefinition::Enum(e) => e.name.to_string(),
+            ValidatedDefinition::Union(u) => u.name.to_string(),
+            ValidatedDefinition::Const(c) => c.value.as_type_name(tab),
+            ValidatedDefinition::TypeDef(t) => match &t.decl.kind {
+                DeclarationKind::Scalar(ty) => ty.as_type_name(tab),
+                DeclarationKind::Optional(o) => o.optional_type_name(tab),
+                DeclarationKind::Array(arr) => arr.as_type_name(tab),
             },
         }
     }
 
-    fn as_const(&self, tab: &SymbolTable) -> u64 {
+    fn as_const(&self, tab: &ValidatedSymbolTable) -> u64 {
         match self {
-            Definition::Const(c) => c.value.as_const(tab),
+            ValidatedDefinition::Const(c) => c.value.as_const(tab),
             _ => panic!("not a constant"),
         }
     }
 }
 
 impl Value {
-    fn as_type_name(&self, tab: &SymbolTable) -> String {
+    fn as_type_name(&self, tab: &ValidatedSymbolTable) -> String {
         match self {
             Value::Int(i) => format!("{i}"),
-            Value::Name(name) => tab
-                .lookup_definition(name)
-                .expect("undefined name")
-                .as_type_name(tab),
+            Value::Name(name) => tab.lookup_definition_infallible(name).as_type_name(tab),
         }
     }
 
-    fn as_const(&self, tab: &SymbolTable) -> u64 {
+    fn as_const(&self, tab: &ValidatedSymbolTable) -> u64 {
         match self {
             Value::Int(i) => *i,
-            Value::Name(name) => tab
-                .lookup_definition(name)
-                .expect("undefined name")
-                .as_const(tab),
+            Value::Name(name) => tab.lookup_definition_infallible(name).as_const(tab),
         }
     }
 }
@@ -307,7 +293,7 @@ enum Context {
 
 impl Array {
     // XXX: represent arrays as slices instead of as vectors?
-    fn as_type_name(&self, tab: &SymbolTable) -> String {
+    fn as_type_name(&self, tab: &ValidatedSymbolTable) -> String {
         let inner_type = match &self.kind {
             ArrayKind::Ascii => {
                 return match &self.size {
@@ -326,10 +312,7 @@ impl Array {
             ArraySize::Fixed(v) => {
                 let len = &match v {
                     Value::Int(i) => *i,
-                    Value::Name(name) => tab
-                        .lookup_definition(name)
-                        .expect("undefined name")
-                        .as_const(tab),
+                    Value::Name(name) => tab.lookup_definition_infallible(name).as_const(tab),
                 };
                 format!("[{inner_type}; {len}]")
             }
@@ -342,7 +325,7 @@ impl Array {
         }
     }
 
-    fn default_value(&self, tab: &SymbolTable) -> String {
+    fn default_value(&self, tab: &ValidatedSymbolTable) -> String {
         match &self.size {
             ArraySize::Fixed(v) => self.fixed_length_array_initializer(v, tab),
             _ => match &self.kind {
@@ -352,7 +335,7 @@ impl Array {
         }
     }
 
-    fn fixed_length_array_initializer(&self, val: &Value, tab: &SymbolTable) -> String {
+    fn fixed_length_array_initializer(&self, val: &Value, tab: &ValidatedSymbolTable) -> String {
         let inner_type = match &self.kind {
             ArrayKind::Ascii => "std::ffi::OsString".to_string(),
             ArrayKind::Byte => "u8".to_string(),
@@ -381,14 +364,14 @@ impl Array {
 }
 
 impl NamedDeclaration {
-    fn as_type_name(&self, tab: &SymbolTable) -> String {
+    fn as_type_name(&self, tab: &ValidatedSymbolTable) -> String {
         match &self.kind {
             DeclarationKind::Scalar(s) => s.as_type_name(tab),
             DeclarationKind::Array(arr) => arr.as_type_name(tab),
             DeclarationKind::Optional(o) => o.optional_type_name(tab),
         }
     }
-    fn default_value(&self, tab: &SymbolTable) -> String {
+    fn default_value(&self, tab: &ValidatedSymbolTable) -> String {
         match &self.kind {
             DeclarationKind::Scalar(s) => s.default_value(tab),
             DeclarationKind::Array(a) => a.default_value(tab),
@@ -397,8 +380,8 @@ impl NamedDeclaration {
     }
 }
 
-impl XdrUnion {
-    fn codegen(&self, buf: &mut CodeBuf, tab: &SymbolTable, params: &Params) {
+impl ValidatedUnion {
+    fn codegen(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable, params: &Params) {
         self.default(buf, tab);
         buf.code_block(&format!("impl {}", self.name), |buf| {
             if params.alloc {
@@ -412,30 +395,34 @@ impl XdrUnion {
         });
         buf.add_line("");
     }
-    fn definition(&self, buf: &mut CodeBuf, tab: &SymbolTable) {
+    fn definition(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         buf.type_header();
         match &self.body {
-            XdrUnionBody::Bool(b) => b.definition_bool(&self.name, buf, tab),
-            XdrUnionBody::Enum(e) => e.definition_enum(&self.name, buf, tab),
+            ValidatedUnionBody::Bool(b) => b.definition_bool(&self.name, buf, tab),
+            ValidatedUnionBody::Enum(e) => e.definition_enum(&self.name, buf, tab),
         };
     }
-    fn default(&self, buf: &mut CodeBuf, tab: &SymbolTable) {
+    fn default(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         buf.code_block(&format!("impl Default for {}", self.name), |buf| {
             buf.code_block("fn default() -> Self", |buf| match &self.body {
-                XdrUnionBody::Bool(b) => b.default_bool(buf),
-                XdrUnionBody::Enum(e) => e.default_enum(buf, tab),
+                ValidatedUnionBody::Bool(b) => b.default_bool(buf),
+                ValidatedUnionBody::Enum(e) => e.default_enum(buf, tab),
             })
         });
     }
 }
 
-impl XdrUnionBoolBody {
-    fn definition_bool(&self, name: &str, buf: &mut CodeBuf, tab: &SymbolTable) {
+impl ValidatedUnionBoolBody {
+    fn definition_bool(&self, name: &str, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         // XXX: A Bool union nearly always has Void for the false arm.
         // Until I see an example where this is not the case, express it as an Option.
         let Declaration::Void = self.false_arm else {
             unimplemented!("Bool union with non-Void false arm is not supported");
         };
+
+        if let Declaration::Void = self.true_arm {
+            unimplemented!("Bool union with Void true arm is not supported");
+        }
 
         let inner_type = match &self.true_arm {
             Declaration::Named(n) => n.as_type_name(tab),
@@ -453,7 +440,7 @@ impl XdrUnionBoolBody {
     }
 }
 
-impl XdrUnionEnumBody {
+impl ValidatedUnionEnumBody {
     /// Given a union case value, which can be either an integer or an identifier, return a name
     /// suitable for a variant in a Rust enum.
     fn arm_name(val: &Value) -> String {
@@ -462,10 +449,10 @@ impl XdrUnionEnumBody {
             Value::Name(n) => n.to_string(),
         }
     }
-    fn definition_enum(&self, name: &str, buf: &mut CodeBuf, tab: &SymbolTable) {
+    fn definition_enum(&self, name: &str, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         buf.code_block(&format!("pub enum {name}"), |buf| {
             for arm in self.arms.iter() {
-                let name = XdrUnionEnumBody::arm_name(&arm.0);
+                let name = ValidatedUnionEnumBody::arm_name(&arm.0);
                 match &arm.1 {
                     Declaration::Void => buf.add_line(&format!("{name},")),
                     Declaration::Named(n) => {
@@ -488,7 +475,7 @@ impl XdrUnionEnumBody {
 
     /// Serialize an Enum union, either using allocating or non-allocating code depending on the
     /// value of `alloc`.
-    fn serialize_enum(&self, buf: &mut CodeBuf, tab: &SymbolTable, alloc: bool) {
+    fn serialize_enum(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable, alloc: bool) {
         let mut max_disc = 0; // Used to determine the discriminant for a default
                               // arm, when present.
         if alloc {
@@ -496,7 +483,7 @@ impl XdrUnionEnumBody {
         }
         buf.code_block("match self", |buf| {
             for arm in &self.arms {
-                let arm_name = XdrUnionEnumBody::arm_name(&arm.0);
+                let arm_name = ValidatedUnionEnumBody::arm_name(&arm.0);
                 match &arm.1 {
                     Declaration::Void => {
                         buf.code_block(&format!("Self::{arm_name} => "), |buf| {
@@ -569,7 +556,7 @@ impl XdrUnionEnumBody {
         val: &Value,
         max_disc: u64,
         buf: &mut CodeBuf,
-        tab: &SymbolTable,
+        tab: &ValidatedSymbolTable,
         alloc: bool,
     ) -> u64 {
         let disc = self.get_discriminant_value(val, tab);
@@ -588,7 +575,7 @@ impl XdrUnionEnumBody {
             max_disc
         }
     }
-    fn default_enum(&self, buf: &mut CodeBuf, tab: &SymbolTable) {
+    fn default_enum(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         let (value, declaration) = &self.arms[0];
         let name = match &value {
             Value::Int(i) => format!("Var{i}"),
@@ -605,14 +592,15 @@ impl XdrUnionEnumBody {
 
     /// Given the value `val`, convert it into its integer value for encoding. If `val` is already
     /// an int, use that, otherwise if it's a string, look it up in the discriminant enum.
-    fn get_discriminant_value(&self, val: &Value, tab: &SymbolTable) -> u64 {
+    fn get_discriminant_value(&self, val: &Value, tab: &ValidatedSymbolTable) -> u64 {
         match val {
             Value::Int(i) => *i,
             Value::Name(n) => {
                 let Some(ref disc) = self.discriminant else {
                     panic!("BUG: attempt to use enum-style union without a discriminant");
                 };
-                let Definition::Enum(ref e) = *tab.lookup_definition(disc).unwrap() else {
+                let ValidatedDefinition::Enum(ref e) = *tab.lookup_definition_infallible(disc)
+                else {
                     panic!("Using non-enum {n} as union discriminant is not allowed");
                 };
                 e.lookup_value(n, tab).unwrap()
@@ -621,8 +609,8 @@ impl XdrUnionEnumBody {
     }
 }
 
-impl XdrStruct {
-    fn codegen(&self, buf: &mut CodeBuf, tab: &SymbolTable, params: &Params) {
+impl ValidatedStruct {
+    fn codegen(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable, params: &Params) {
         self.default(buf, tab);
         buf.code_block(&format!("impl {}", self.name), |buf| {
             if params.alloc {
@@ -637,26 +625,31 @@ impl XdrStruct {
         buf.add_line("");
     }
 
-    fn definition(&self, buf: &mut CodeBuf, tab: &SymbolTable) {
+    fn definition(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         buf.type_header();
         buf.code_block(&format!("pub struct {}", self.name), |buf| {
-            for decl in self.members.iter() {
+            for (decl, _) in self.members.iter() {
                 self.member_declaration(decl, buf, tab);
             }
         });
         buf.add_line("");
     }
 
-    fn member_declaration(&self, decl: &NamedDeclaration, buf: &mut CodeBuf, tab: &SymbolTable) {
+    fn member_declaration(
+        &self,
+        decl: &NamedDeclaration,
+        buf: &mut CodeBuf,
+        tab: &ValidatedSymbolTable,
+    ) {
         let type_name = decl.as_type_name(tab);
         buf.add_line(&format!("pub {}: {},", decl.name, type_name));
     }
 
-    fn default(&self, buf: &mut CodeBuf, tab: &SymbolTable) {
+    fn default(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         buf.code_block(&format!("impl Default for {}", self.name), |buf| {
             buf.code_block("fn default() -> Self", |buf| {
                 buf.code_block(&self.name, |buf| {
-                    for decl in self.members.iter() {
+                    for (decl, _) in self.members.iter() {
                         buf.add_line(&format!("{}: {},", decl.name, decl.default_value(tab)));
                     }
                 });
@@ -665,8 +658,8 @@ impl XdrStruct {
     }
 }
 
-impl XdrEnum {
-    fn codegen(&self, buf: &mut CodeBuf, tab: &SymbolTable, params: &Params) {
+impl ValidatedEnum {
+    fn codegen(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable, params: &Params) {
         self.default(buf);
         buf.code_block(&format!("impl {}", self.name), |buf| {
             if params.alloc {
@@ -702,16 +695,12 @@ impl XdrEnum {
     ///
     /// Returns None if `name` does not appear as a variant in this enum, and returns Err(_) if the
     /// value of `name` exists but is unresolvable.
-    fn lookup_value(&self, name: &str, tab: &SymbolTable) -> Option<u64> {
+    fn lookup_value(&self, name: &str, tab: &ValidatedSymbolTable) -> Option<u64> {
         for var in self.variants.iter() {
             if name == var.0 {
                 return match &var.1 {
                     Value::Int(i) => Some(*i),
-                    Value::Name(n) => Some(
-                        tab.lookup_definition(n)
-                            .expect("undefined name")
-                            .as_const(tab),
-                    ),
+                    Value::Name(n) => Some(tab.lookup_definition_infallible(n).as_const(tab)),
                 };
             }
         }
@@ -721,7 +710,7 @@ impl XdrEnum {
 }
 
 impl XdrType {
-    fn as_type_name(&self, tab: &SymbolTable) -> String {
+    fn as_type_name(&self, tab: &ValidatedSymbolTable) -> String {
         match self {
             XdrType::Int => "i32".to_string(),
             XdrType::UInt => "u32".to_string(),
@@ -731,14 +720,11 @@ impl XdrType {
             XdrType::Double => todo!(),
             XdrType::Quadruple => todo!(),
             XdrType::Bool => "bool".to_string(),
-            XdrType::Name(s) => tab
-                .lookup_definition(s)
-                .expect("undefined name")
-                .as_type_name(tab),
+            XdrType::Name(s) => tab.lookup_definition_infallible(s).as_type_name(tab),
         }
     }
 
-    fn default_value(&self, tab: &SymbolTable) -> String {
+    fn default_value(&self, tab: &ValidatedSymbolTable) -> String {
         match self {
             XdrType::Int => "0".to_string(),
             XdrType::UInt => "0".to_string(),
@@ -749,12 +735,9 @@ impl XdrType {
             XdrType::Quadruple => "0.0".to_string(),
             XdrType::Bool => "false".to_string(),
             XdrType::Name(n) => {
-                let definition = tab.lookup_definition(n).unwrap();
+                let definition = tab.lookup_definition_infallible(n);
                 match *definition {
-                    Definition::TypeDef(ref tdef) => match &tdef.decl {
-                        Declaration::Void => panic!("void default value not supported"),
-                        Declaration::Named(n) => n.default_value(tab),
-                    },
+                    ValidatedDefinition::TypeDef(ref tdef) => tdef.decl.default_value(tab),
                     _ => format!("{n}::default()"),
                 }
             }
@@ -772,7 +755,7 @@ impl XdrType {
     /// or given an XdrType::Name("bar"):
     ///
     ///     "bar.serialize_alloc()"
-    fn serialize_method_string(&self, var_name: &str, tab: &SymbolTable) -> String {
+    fn serialize_method_string(&self, var_name: &str, tab: &ValidatedSymbolTable) -> String {
         let (func_name, func_kind) = self.serialize_method(tab);
         match func_kind {
             FunctionKind::Function => {
@@ -792,7 +775,7 @@ impl XdrType {
     ///                      ^^^^^^
     ///    `v.extend_from_slice(&bytes);`
     ///
-    fn serialize_method(&self, tab: &SymbolTable) -> (String, FunctionKind) {
+    fn serialize_method(&self, tab: &ValidatedSymbolTable) -> (String, FunctionKind) {
         let method = match self {
             XdrType::Int => "to_be_bytes()",
             XdrType::UInt => "to_be_bytes()",
@@ -807,8 +790,8 @@ impl XdrType {
                     FunctionKind::Function,
                 )
             }
-            XdrType::Name(name) => match *tab.lookup_definition(name).unwrap() {
-                Definition::TypeDef(_) => unreachable!(
+            XdrType::Name(name) => match *tab.lookup_definition_infallible(name) {
+                ValidatedDefinition::TypeDef(_) => unreachable!(
                     "BUG: Typedef should have already been handled in serialize_inline()"
                 ),
                 _ => "serialize_alloc()",
@@ -827,18 +810,18 @@ impl XdrType {
     ///
     /// Such types are represented in Rust as Vectors, rather than linked lists.
     /// Non-self-referential optional types are represented as Rust Options.
-    fn self_referential_optional(&self, tab: &SymbolTable) -> bool {
+    fn self_referential_optional(&self, tab: &ValidatedSymbolTable) -> bool {
         let XdrType::Name(n) = self else {
             return false;
         };
 
-        let Definition::Struct(ref s) = *tab.lookup_definition(n).expect("undefined name") else {
+        let ValidatedDefinition::Struct(ref s) = *tab.lookup_definition_infallible(n) else {
             return false;
         };
 
         s.self_referential_optional
     }
-    fn optional_type_name(&self, tab: &SymbolTable) -> String {
+    fn optional_type_name(&self, tab: &ValidatedSymbolTable) -> String {
         let inner_type = self.as_type_name(tab);
 
         if self.self_referential_optional(tab) {
@@ -847,7 +830,7 @@ impl XdrType {
             format!("Option<{inner_type}>")
         }
     }
-    fn optional_default_value(&self, tab: &SymbolTable) -> String {
+    fn optional_default_value(&self, tab: &ValidatedSymbolTable) -> String {
         if self.self_referential_optional(tab) {
             "Vec::new()"
         } else {

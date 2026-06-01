@@ -1,49 +1,32 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright 2025. Triad National Security, LLC.
 
-use std::{
-    cell::{Ref, RefCell},
-    collections::HashMap,
-};
+use std::collections::HashMap;
 
-use crate::{ast::*, XdrError};
+use crate::{ast::*, ir::ValidatedDefinition, XdrError};
 
-pub struct SymbolTable {
-    pub tab: HashMap<UnresolvedName, RefCell<Definition>>,
+#[derive(Debug)]
+pub struct ValidatedSymbolTable {
+    pub tab: HashMap<UnresolvedName, ValidatedDefinition>,
 }
 
-pub type DefinitionList = Vec<String>;
-
-impl SymbolTable {
-    pub fn new(schema: &Schema) -> (Self, DefinitionList) {
-        let mut tab = HashMap::new();
-        let mut definitions = Vec::new();
-
-        for def in schema.definitions.iter() {
-            let name = match def {
-                Definition::Const(d) => &d.name,
-                Definition::TypeDef(d) => match &d.decl {
-                    Declaration::Named(n) => &n.name,
-                    Declaration::Void => {
-                        continue;
-                    }
-                },
-                Definition::Struct(d) => &d.name,
-                Definition::Enum(d) => &d.name,
-                Definition::Union(d) => &d.name,
-            };
-            tab.insert(name.clone(), RefCell::new(def.clone()));
-            definitions.push(name.clone());
+impl ValidatedSymbolTable {
+    pub fn new_empty() -> ValidatedSymbolTable {
+        ValidatedSymbolTable {
+            tab: HashMap::<String, ValidatedDefinition>::new(),
         }
-
-        (SymbolTable { tab }, definitions)
     }
 
     /// Tries to resolve a name to its underlying type.
-    pub fn lookup_definition(&self, name: &str) -> Result<Ref<'_, Definition>, XdrError> {
+    pub fn lookup_definition(&self, name: &str) -> Result<&ValidatedDefinition, XdrError> {
         match self.tab.get(name) {
-            Some(ent) => Ok(ent.borrow()),
+            Some(ent) => Ok(ent),
             None => Err(XdrError::UndefinedName(name.to_string())),
         }
+    }
+
+    pub fn lookup_definition_infallible(&self, name: &str) -> &ValidatedDefinition {
+        self.lookup_definition(name)
+            .unwrap_or_else(|_| panic!("Could not find name \"{}\"", name))
     }
 }
