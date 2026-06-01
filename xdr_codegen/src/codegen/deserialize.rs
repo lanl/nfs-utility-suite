@@ -208,7 +208,7 @@ impl XdrType {
     ) {
         // Handle typedefs specially by finding their underlying type:
         if let XdrType::Name(name) = self {
-            let definition = tab.lookup_definition(name).unwrap();
+            let definition = tab.lookup_definition_infallible(name);
             if let ValidatedDefinition::TypeDef(ref tdef) = *definition {
                 tdef.decl.deserialize_inline(Some(var_name), buf, tab);
                 return;

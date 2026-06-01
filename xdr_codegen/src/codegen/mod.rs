@@ -143,18 +143,12 @@ pub fn codegen(schema: &ValidatedSchema, module_name: &str, params: &Params) -> 
         }
 
         for def in schema.definition_list.iter() {
-            let def = schema
-                .symbol_table
-                .lookup_definition(def)
-                .expect("Undefined name");
+            let def = schema.symbol_table.lookup_definition_infallible(def);
             def.definition(buf, &schema.symbol_table);
         }
 
         for def in schema.definition_list.iter() {
-            let def = schema
-                .symbol_table
-                .lookup_definition(def)
-                .expect("Undefined name");
+            let def = schema.symbol_table.lookup_definition_infallible(def);
             def.implementation(buf, &schema.symbol_table, params);
         }
 
@@ -279,20 +273,14 @@ impl Value {
     fn as_type_name(&self, tab: &ValidatedSymbolTable) -> String {
         match self {
             Value::Int(i) => format!("{i}"),
-            Value::Name(name) => tab
-                .lookup_definition(name)
-                .expect("undefined name")
-                .as_type_name(tab),
+            Value::Name(name) => tab.lookup_definition_infallible(name).as_type_name(tab),
         }
     }
 
     fn as_const(&self, tab: &ValidatedSymbolTable) -> u64 {
         match self {
             Value::Int(i) => *i,
-            Value::Name(name) => tab
-                .lookup_definition(name)
-                .expect("undefined name")
-                .as_const(tab),
+            Value::Name(name) => tab.lookup_definition_infallible(name).as_const(tab),
         }
     }
 }
@@ -324,10 +312,7 @@ impl Array {
             ArraySize::Fixed(v) => {
                 let len = &match v {
                     Value::Int(i) => *i,
-                    Value::Name(name) => tab
-                        .lookup_definition(name)
-                        .expect("undefined name")
-                        .as_const(tab),
+                    Value::Name(name) => tab.lookup_definition_infallible(name).as_const(tab),
                 };
                 format!("[{inner_type}; {len}]")
             }
@@ -614,7 +599,8 @@ impl ValidatedUnionEnumBody {
                 let Some(ref disc) = self.discriminant else {
                     panic!("BUG: attempt to use enum-style union without a discriminant");
                 };
-                let ValidatedDefinition::Enum(ref e) = *tab.lookup_definition(disc).unwrap() else {
+                let ValidatedDefinition::Enum(ref e) = *tab.lookup_definition_infallible(disc)
+                else {
                     panic!("Using non-enum {n} as union discriminant is not allowed");
                 };
                 e.lookup_value(n, tab).unwrap()
@@ -714,11 +700,7 @@ impl ValidatedEnum {
             if name == var.0 {
                 return match &var.1 {
                     Value::Int(i) => Some(*i),
-                    Value::Name(n) => Some(
-                        tab.lookup_definition(n)
-                            .expect("undefined name")
-                            .as_const(tab),
-                    ),
+                    Value::Name(n) => Some(tab.lookup_definition_infallible(n).as_const(tab)),
                 };
             }
         }
@@ -738,10 +720,7 @@ impl XdrType {
             XdrType::Double => todo!(),
             XdrType::Quadruple => todo!(),
             XdrType::Bool => "bool".to_string(),
-            XdrType::Name(s) => tab
-                .lookup_definition(s)
-                .expect("undefined name")
-                .as_type_name(tab),
+            XdrType::Name(s) => tab.lookup_definition_infallible(s).as_type_name(tab),
         }
     }
 
@@ -756,7 +735,7 @@ impl XdrType {
             XdrType::Quadruple => "0.0".to_string(),
             XdrType::Bool => "false".to_string(),
             XdrType::Name(n) => {
-                let definition = tab.lookup_definition(n).unwrap();
+                let definition = tab.lookup_definition_infallible(n);
                 match *definition {
                     ValidatedDefinition::TypeDef(ref tdef) => tdef.decl.default_value(tab),
                     _ => format!("{n}::default()"),
@@ -811,7 +790,7 @@ impl XdrType {
                     FunctionKind::Function,
                 )
             }
-            XdrType::Name(name) => match *tab.lookup_definition(name).unwrap() {
+            XdrType::Name(name) => match *tab.lookup_definition_infallible(name) {
                 ValidatedDefinition::TypeDef(_) => unreachable!(
                     "BUG: Typedef should have already been handled in serialize_inline()"
                 ),
@@ -836,8 +815,7 @@ impl XdrType {
             return false;
         };
 
-        let ValidatedDefinition::Struct(ref s) = *tab.lookup_definition(n).expect("undefined name")
-        else {
+        let ValidatedDefinition::Struct(ref s) = *tab.lookup_definition_infallible(n) else {
             return false;
         };
 

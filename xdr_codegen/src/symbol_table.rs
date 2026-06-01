@@ -24,4 +24,9 @@ impl ValidatedSymbolTable {
             None => Err(XdrError::UndefinedName(name.to_string())),
         }
     }
+
+    pub fn lookup_definition_infallible(&self, name: &str) -> &ValidatedDefinition {
+        self.lookup_definition(name)
+            .unwrap_or_else(|_| panic!("Could not find name \"{}\"", name))
+    }
 }

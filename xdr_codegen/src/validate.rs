@@ -158,14 +158,13 @@ impl XdrType {
             XdrType::Hyper | XdrType::UHyper | XdrType::Double => Some(8),
             XdrType::Quadruple => Some(16),
             XdrType::Name(tn) => {
-                if let Some(decl_size) = size_tab.get(tn) {
-                    if decl_size.is_determinate() {
-                        Some(decl_size.known)
-                    } else {
-                        None
-                    }
+                let decl_size = size_tab
+                    .get(tn)
+                    .expect("could not find size information for type \"{tn}\"");
+                if decl_size.is_determinate() {
+                    Some(decl_size.known)
                 } else {
-                    panic!("could not find size information for type \"{tn}\"");
+                    None
                 }
             }
         }
@@ -179,18 +178,15 @@ impl Array {
                 let count = match value {
                     Value::Int(val) => *val as usize,
                     Value::Name(name) => {
-                        if let Ok(constval) = tab.lookup_definition(name) {
-                            if let ValidatedDefinition::Const(constval) = constval {
-                                if let Value::Int(intval) = constval.value {
-                                    intval as usize
-                                } else {
-                                    panic!("constant \"{name}\" passed to array is not immediately an integer");
-                                }
+                        let constval = tab.lookup_definition_infallible(name);
+                        if let ValidatedDefinition::Const(constval) = constval {
+                            if let Value::Int(intval) = constval.value {
+                                intval as usize
                             } else {
-                                panic!("definition for value passed as array length specifier \"{name}\" is not a constant");
+                                panic!("constant \"{name}\" passed to array is not immediately an integer");
                             }
                         } else {
-                            panic!("could not find definition for constant of name \"{name}\"");
+                            panic!("definition for value passed as array length specifier \"{name}\" is not a constant");
                         }
                     }
                 };
@@ -349,10 +345,7 @@ impl XdrUnionEnumBody {
             todo!("we do not currently support void discriminant unions")
         };
 
-        let Ok(discriminant) = tab.lookup_definition(discriminant_name) else {
-            panic!("could not find discriminant \"{}\"", discriminant_name)
-        };
-
+        let discriminant = tab.lookup_definition_infallible(discriminant_name);
         let all_possible: HashSet<String> = match discriminant {
             ValidatedDefinition::Enum(xdr_enum) => xdr_enum
                 .variants
@@ -483,7 +476,7 @@ fn is_declaration_option_of_name(
             let XdrType::Name(name) = ty else {
                 return false;
             };
-            let def = tab.lookup_definition(name).expect("Undefined name");
+            let def = tab.lookup_definition_infallible(name);
             let ValidatedDefinition::TypeDef(ref typedef) = *def else {
                 return false;
             };
@@ -539,7 +532,7 @@ mod tests {
 
         let schema = res.unwrap();
 
-        let foo_def = schema.symbol_table.lookup_definition("Foo").unwrap();
+        let foo_def = schema.symbol_table.lookup_definition_infallible("Foo");
         let ValidatedDefinition::Struct(foo_def) = foo_def else {
             panic!("Foo should be a struct");
         };
@@ -552,7 +545,7 @@ mod tests {
                 }
         );
 
-        let bar_def = schema.symbol_table.lookup_definition("Bar").unwrap();
+        let bar_def = schema.symbol_table.lookup_definition_infallible("Bar");
         let ValidatedDefinition::Struct(bar_def) = bar_def else {
             panic!("Bar should be a struct");
         };
@@ -641,7 +634,7 @@ mod tests {
 
         let schema = res.unwrap();
 
-        let foo_def = schema.symbol_table.lookup_definition("Foo").unwrap();
+        let foo_def = schema.symbol_table.lookup_definition_infallible("Foo");
         let ValidatedDefinition::Struct(foo_def) = foo_def else {
             panic!("Foo should be a struct");
         };
@@ -654,7 +647,7 @@ mod tests {
                 }
         );
 
-        let bar_def = schema.symbol_table.lookup_definition("Bar").unwrap();
+        let bar_def = schema.symbol_table.lookup_definition_infallible("Bar");
         let ValidatedDefinition::Struct(bar_def) = bar_def else {
             panic!("Bar should be a struct");
         };
@@ -718,7 +711,7 @@ mod tests {
             }
         );
 
-        let baz_def = schema.symbol_table.lookup_definition("Baz").unwrap();
+        let baz_def = schema.symbol_table.lookup_definition_infallible("Baz");
         let ValidatedDefinition::Struct(baz_def) = baz_def else {
             panic!("Baz should be a struct");
         };
