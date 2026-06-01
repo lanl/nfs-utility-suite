@@ -6,32 +6,26 @@ use std::collections::HashMap;
 use crate::{ast::*, ir::ValidatedDefinition, XdrError};
 
 #[derive(Debug)]
-pub struct GenericSymbolTable<T> {
-    pub tab: HashMap<UnresolvedName, T>,
+pub struct ValidatedSymbolTable {
+    pub tab: HashMap<UnresolvedName, ValidatedDefinition>,
 }
 
 pub trait HasName {
     fn get_name(&self) -> Option<&str>;
 }
 
-impl<T> GenericSymbolTable<T>
-where
-    T: HasName,
-    T: Clone,
-{
-    pub fn new_empty() -> GenericSymbolTable<T> {
-        GenericSymbolTable {
-            tab: HashMap::<String, T>::new(),
+impl ValidatedSymbolTable {
+    pub fn new_empty() -> ValidatedSymbolTable {
+        ValidatedSymbolTable {
+            tab: HashMap::<String, ValidatedDefinition>::new(),
         }
     }
 
     /// Tries to resolve a name to its underlying type.
-    pub fn lookup_definition(&self, name: &str) -> Result<&T, XdrError> {
+    pub fn lookup_definition(&self, name: &str) -> Result<&ValidatedDefinition, XdrError> {
         match self.tab.get(name) {
             Some(ent) => Ok(ent),
             None => Err(XdrError::UndefinedName(name.to_string())),
         }
     }
 }
-
-pub type ValidatedSymbolTable = GenericSymbolTable<ValidatedDefinition>;
