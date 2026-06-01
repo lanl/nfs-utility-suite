@@ -32,7 +32,9 @@ impl ValidatedDefinition {
     ) -> DefinitionSize {
         match self {
             ValidatedDefinition::Const(_) => DefinitionSize {
-                known: 4,
+                known: 4, // When used as an enum discriminant, the size is 4. Otherwise, this could
+                // be arbitrarily wide. That being said, the processing of the usage of constants
+                // happens at compile time and thus this width is irrelevant.
                 deps: Vec::new(),
             },
             ValidatedDefinition::TypeDef(type_def) => match &type_def.decl.kind {
