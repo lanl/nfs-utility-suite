@@ -18,15 +18,15 @@ impl ValidatedSymbolTable {
     }
 
     /// Tries to resolve a name to its underlying type.
-    pub fn lookup_definition(&self, name: &str) -> Result<&ValidatedDefinition, XdrError> {
+    pub fn lookup_definition_fallible(&self, name: &str) -> Result<&ValidatedDefinition, XdrError> {
         match self.tab.get(name) {
             Some(ent) => Ok(ent),
             None => Err(XdrError::UndefinedName(name.to_string())),
         }
     }
 
-    pub fn lookup_definition_infallible(&self, name: &str) -> &ValidatedDefinition {
-        self.lookup_definition(name)
+    pub fn lookup_definition(&self, name: &str) -> &ValidatedDefinition {
+        self.lookup_definition_fallible(name)
             .unwrap_or_else(|_| panic!("Could not find name \"{}\"", name))
     }
 }

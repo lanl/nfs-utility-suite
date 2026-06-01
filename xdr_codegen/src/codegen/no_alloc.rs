@@ -173,7 +173,7 @@ impl XdrType {
     ) {
         match self {
             XdrType::Name(name) => {
-                let definition = tab.lookup_definition_infallible(name);
+                let definition = tab.lookup_definition(name);
                 if let ValidatedDefinition::TypeDef(ref tdef) = *definition {
                     tdef.decl
                         .serialize_no_alloc_inline(Some(var_name), buf, tab);

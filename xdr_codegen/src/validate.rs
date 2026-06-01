@@ -180,7 +180,7 @@ impl Array {
                 let count = match value {
                     Value::Int(val) => *val as usize,
                     Value::Name(name) => {
-                        let constval = tab.lookup_definition_infallible(name);
+                        let constval = tab.lookup_definition(name);
                         if let ValidatedDefinition::Const(constval) = constval {
                             if let Value::Int(intval) = constval.value {
                                 intval as usize
@@ -347,7 +347,7 @@ impl XdrUnionEnumBody {
             todo!("we do not currently support void discriminant unions")
         };
 
-        let discriminant = tab.lookup_definition_infallible(discriminant_name);
+        let discriminant = tab.lookup_definition(discriminant_name);
         let all_possible: HashSet<String> = match discriminant {
             ValidatedDefinition::Enum(xdr_enum) => xdr_enum
                 .variants
@@ -478,7 +478,7 @@ fn is_declaration_option_of_name(
             let XdrType::Name(name) = ty else {
                 return false;
             };
-            let def = tab.lookup_definition_infallible(name);
+            let def = tab.lookup_definition(name);
             let ValidatedDefinition::TypeDef(ref typedef) = *def else {
                 return false;
             };
@@ -534,7 +534,7 @@ mod tests {
 
         let schema = res.unwrap();
 
-        let foo_def = schema.symbol_table.lookup_definition_infallible("Foo");
+        let foo_def = schema.symbol_table.lookup_definition("Foo");
         let ValidatedDefinition::Struct(foo_def) = foo_def else {
             panic!("Foo should be a struct");
         };
@@ -547,7 +547,7 @@ mod tests {
                 }
         );
 
-        let bar_def = schema.symbol_table.lookup_definition_infallible("Bar");
+        let bar_def = schema.symbol_table.lookup_definition("Bar");
         let ValidatedDefinition::Struct(bar_def) = bar_def else {
             panic!("Bar should be a struct");
         };
@@ -636,7 +636,7 @@ mod tests {
 
         let schema = res.unwrap();
 
-        let foo_def = schema.symbol_table.lookup_definition_infallible("Foo");
+        let foo_def = schema.symbol_table.lookup_definition("Foo");
         let ValidatedDefinition::Struct(foo_def) = foo_def else {
             panic!("Foo should be a struct");
         };
@@ -649,7 +649,7 @@ mod tests {
                 }
         );
 
-        let bar_def = schema.symbol_table.lookup_definition_infallible("Bar");
+        let bar_def = schema.symbol_table.lookup_definition("Bar");
         let ValidatedDefinition::Struct(bar_def) = bar_def else {
             panic!("Bar should be a struct");
         };
@@ -713,7 +713,7 @@ mod tests {
             }
         );
 
-        let baz_def = schema.symbol_table.lookup_definition_infallible("Baz");
+        let baz_def = schema.symbol_table.lookup_definition("Baz");
         let ValidatedDefinition::Struct(baz_def) = baz_def else {
             panic!("Baz should be a struct");
         };
