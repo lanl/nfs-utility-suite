@@ -10,10 +10,6 @@ pub struct ValidatedSymbolTable {
     pub tab: HashMap<UnresolvedName, ValidatedDefinition>,
 }
 
-pub trait HasName {
-    fn get_name(&self) -> Option<&str>;
-}
-
 impl ValidatedSymbolTable {
     pub fn new_empty() -> ValidatedSymbolTable {
         ValidatedSymbolTable {

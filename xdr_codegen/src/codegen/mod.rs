@@ -259,13 +259,10 @@ impl ValidatedDefinition {
             ValidatedDefinition::Enum(e) => e.name.to_string(),
             ValidatedDefinition::Union(u) => u.name.to_string(),
             ValidatedDefinition::Const(c) => c.value.as_type_name(tab),
-            ValidatedDefinition::TypeDef(t) => match &t.decl {
-                Declaration::Named(n) => match &n.kind {
-                    DeclarationKind::Scalar(ty) => ty.as_type_name(tab),
-                    DeclarationKind::Optional(o) => o.optional_type_name(tab),
-                    DeclarationKind::Array(arr) => arr.as_type_name(tab),
-                },
-                Declaration::Void => panic!("not supporting void in typedef..."),
+            ValidatedDefinition::TypeDef(t) => match &t.decl.kind {
+                DeclarationKind::Scalar(ty) => ty.as_type_name(tab),
+                DeclarationKind::Optional(o) => o.optional_type_name(tab),
+                DeclarationKind::Array(arr) => arr.as_type_name(tab),
             },
         }
     }
@@ -761,10 +758,7 @@ impl XdrType {
             XdrType::Name(n) => {
                 let definition = tab.lookup_definition(n).unwrap();
                 match *definition {
-                    ValidatedDefinition::TypeDef(ref tdef) => match &tdef.decl {
-                        Declaration::Void => panic!("void default value not supported"),
-                        Declaration::Named(n) => n.default_value(tab),
-                    },
+                    ValidatedDefinition::TypeDef(ref tdef) => tdef.decl.default_value(tab),
                     _ => format!("{n}::default()"),
                 }
             }

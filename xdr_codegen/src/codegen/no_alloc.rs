@@ -175,12 +175,8 @@ impl XdrType {
             XdrType::Name(name) => {
                 let definition = tab.lookup_definition(name).unwrap();
                 if let ValidatedDefinition::TypeDef(ref tdef) = *definition {
-                    match &tdef.decl {
-                        Declaration::Void => panic!("Void typedefs are not currently supported"),
-                        Declaration::Named(n) => {
-                            n.serialize_no_alloc_inline(Some(var_name), buf, tab)
-                        }
-                    };
+                    tdef.decl
+                        .serialize_no_alloc_inline(Some(var_name), buf, tab);
                     return;
                 };
 

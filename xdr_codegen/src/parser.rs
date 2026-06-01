@@ -189,9 +189,10 @@ impl<'src> Parser<'src> {
     }
 
     fn type_def(&mut self) -> XdrTypeDef {
-        XdrTypeDef {
-            decl: self.declaration(),
-        }
+        let Declaration::Named(nd) = self.declaration() else {
+            panic!("Unexpected void typedef");
+        };
+        XdrTypeDef { decl: nd }
     }
 
     fn const_definition(&mut self) -> Definition {

@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright 2025. Triad National Security, LLC.
 
-use crate::symbol_table::HasName;
-
 #[derive(Debug)]
 pub struct Schema {
     pub definitions: Vec<Definition>,
@@ -58,7 +56,7 @@ pub struct ConstDefinition {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct XdrTypeDef {
-    pub decl: Declaration,
+    pub decl: NamedDeclaration,
 }
 
 /// For strings that are not used for their own value, but to resolve to another type.
@@ -187,17 +185,14 @@ pub enum DeclarationKind {
     Optional(XdrType),
 }
 
-impl HasName for Definition {
-    fn get_name(&self) -> Option<&str> {
+impl Definition {
+    pub fn get_name(&self) -> &str {
         match self {
-            Definition::Const(d) => Some(&d.name),
-            Definition::TypeDef(d) => match &d.decl {
-                Declaration::Named(n) => Some(&n.name),
-                Declaration::Void => None,
-            },
-            Definition::Struct(d) => Some(&d.name),
-            Definition::Enum(d) => Some(&d.name),
-            Definition::Union(d) => Some(&d.name),
+            Definition::Const(d) => &d.name,
+            Definition::TypeDef(d) => &d.decl.name,
+            Definition::Struct(d) => &d.name,
+            Definition::Enum(d) => &d.name,
+            Definition::Union(d) => &d.name,
         }
     }
 }

@@ -35,41 +35,38 @@ impl ValidatedDefinition {
                 known: 4,
                 deps: Vec::new(),
             },
-            ValidatedDefinition::TypeDef(xdr_type_def) => match &xdr_type_def.decl {
-                Declaration::Named(named_declaration) => match &named_declaration.kind {
-                    DeclarationKind::Scalar(xdr_type) => {
-                        if let Some(size) = xdr_type.size(size_tab) {
-                            DefinitionSize {
-                                known: size,
-                                deps: Vec::new(),
-                            }
-                        } else {
-                            DefinitionSize {
-                                known: 0,
-                                deps: vec![named_declaration.name.clone()],
-                            }
+            ValidatedDefinition::TypeDef(type_def) => match &type_def.decl.kind {
+                DeclarationKind::Scalar(xdr_type) => {
+                    if let Some(size) = xdr_type.size(size_tab) {
+                        DefinitionSize {
+                            known: size,
+                            deps: Vec::new(),
+                        }
+                    } else {
+                        DefinitionSize {
+                            known: 0,
+                            deps: vec![type_def.decl.name.clone()],
                         }
                     }
-                    DeclarationKind::Array(array) => {
-                        let arr_size = array.size(validated_symbol_table, size_tab);
-                        if let Some(arr_size) = arr_size {
-                            DefinitionSize {
-                                known: arr_size,
-                                deps: Vec::new(),
-                            }
-                        } else {
-                            DefinitionSize {
-                                known: 0,
-                                deps: vec![named_declaration.name.clone()],
-                            }
+                }
+                DeclarationKind::Array(array) => {
+                    let arr_size = array.size(validated_symbol_table, size_tab);
+                    if let Some(arr_size) = arr_size {
+                        DefinitionSize {
+                            known: arr_size,
+                            deps: Vec::new(),
+                        }
+                    } else {
+                        DefinitionSize {
+                            known: 0,
+                            deps: vec![type_def.decl.name.clone()],
                         }
                     }
-                    DeclarationKind::Optional(_) => DefinitionSize {
-                        known: 0,
-                        deps: vec![named_declaration.name.clone()],
-                    },
+                }
+                DeclarationKind::Optional(_) => DefinitionSize {
+                    known: 0,
+                    deps: vec![type_def.decl.name.clone()],
                 },
-                Declaration::Void => panic!("encountered null typedef"),
             },
             ValidatedDefinition::Struct(validated_struct) => validated_struct.size.clone(),
             ValidatedDefinition::Enum(_) => DefinitionSize {
@@ -92,10 +89,7 @@ impl ValidatedSchema {
         let mut validated_symbol_table = ValidatedSymbolTable::new_empty();
         let mut definition_list = Vec::new();
         for definition in schema.definitions.drain(..) {
-            let Some(definition_name) = definition.get_name().map(|v| v.to_string()) else {
-                continue;
-            };
-
+            let definition_name = definition.get_name().to_string();
             let validated_definition = definition.validate(&validated_symbol_table, &size_tab)?;
 
             let size = validated_definition.size(&size_tab, &validated_symbol_table);
@@ -130,13 +124,10 @@ impl Definition {
                     value: cdef.value,
                 }),
                 Value::Name(_) => {
-                    panic!(
-                        "constant \"{}\" is invalid: constants must be integers",
-                        cdef.name
-                    )
+                    return Err(XdrError::InvalidConstantDefinition(cdef.name));
                 }
             },
-            Definition::TypeDef(td) => ValidatedDefinition::TypeDef(XdrTypeDef { decl: td.decl }),
+            Definition::TypeDef(td) => ValidatedDefinition::TypeDef(td),
             Definition::Struct(s) => ValidatedDefinition::Struct(s.validate(tab, size_tab)?),
             Definition::Enum(e) => ValidatedDefinition::Enum(ValidatedEnum {
                 name: e.name,
@@ -239,18 +230,6 @@ impl NamedDeclaration {
             DeclarationKind::Scalar(xdr_type) => xdr_type.size(size_tab),
             DeclarationKind::Array(array) => array.size(tab, size_tab),
             DeclarationKind::Optional(_) => None,
-        }
-    }
-}
-
-impl HasName for ValidatedDefinition {
-    fn get_name(&self) -> Option<&str> {
-        match self {
-            ValidatedDefinition::Const(const_definition) => Some(const_definition.name.as_str()),
-            ValidatedDefinition::TypeDef(xdr_type_def) => xdr_type_def.decl.name(),
-            ValidatedDefinition::Struct(validated_struct) => Some(validated_struct.name.as_str()),
-            ValidatedDefinition::Enum(validated_enum) => Some(validated_enum.name.as_str()),
-            ValidatedDefinition::Union(validated_union) => Some(validated_union.name.as_str()),
         }
     }
 }
@@ -508,10 +487,7 @@ fn is_declaration_option_of_name(
             let ValidatedDefinition::TypeDef(ref typedef) = *def else {
                 return false;
             };
-            let Declaration::Named(ref n) = typedef.decl else {
-                return false;
-            };
-            is_declaration_option_of_name(outer_name, n, tab)
+            is_declaration_option_of_name(outer_name, &typedef.decl, tab)
         }
         DeclarationKind::Array(_) => false,
     }

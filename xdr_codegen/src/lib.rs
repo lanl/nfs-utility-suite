@@ -38,6 +38,9 @@ enum XdrError {
     /// For attempting to use a name that should resolve to a constant, when the name isn't a
     /// constant
     _NotAConstant(String),
+
+    /// For attempting to use a constant that isn't an integer
+    InvalidConstantDefinition(String),
 }
 
 impl std::error::Error for XdrError {}
@@ -54,6 +57,9 @@ impl fmt::Display for XdrError {
             XdrError::UnsupportedOptional(n) => write!(f, "Unsupported optional in: {n}"),
             XdrError::UndefinedName(n) => write!(f, "Undefined name: {n}"),
             XdrError::_NotAConstant(n) => write!(f, "Not a constant: {n}"),
+            XdrError::InvalidConstantDefinition(n) => {
+                write!(f, "Constant definition is invalid, must be an integer: {n}")
+            }
         }
     }
 }
