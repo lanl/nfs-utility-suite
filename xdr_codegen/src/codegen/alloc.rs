@@ -102,14 +102,8 @@ impl ValidatedUnionBoolBody {
         buf.code_block("match &self.inner", |buf| {
             buf.code_block("Some(val) => ", |buf| {
                 buf.add_line("let mut buf = 1_u32.to_be_bytes().to_vec();");
-                match &self.true_arm {
-                    Declaration::Void => {
-                        buf.add_line("// void");
-                    }
-                    Declaration::Named(n) => {
-                        n.serialize_inline(Some("val"), Context::InUnion, buf, tab)
-                    }
-                };
+                self.true_arm
+                    .serialize_inline(Some("val"), Context::InUnion, buf, tab);
                 buf.add_line("buf");
             });
             buf.add_line("None => 0_u32.to_be_bytes().to_vec(),");

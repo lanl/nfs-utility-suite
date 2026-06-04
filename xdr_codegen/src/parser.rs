@@ -296,11 +296,14 @@ impl<'src> Parser<'src> {
             }
             TokenKind::Bool => {
                 self.xdr_union_discriminant_remainder();
-                let (true_arm, false_arm) = self.xdr_union_bool_body();
-                XdrUnionBody::Bool(XdrUnionBoolBody {
-                    true_arm,
-                    false_arm,
-                })
+                let (Declaration::Named(true_arm), Declaration::Void) = self.xdr_union_bool_body()
+                else {
+                    panic!(
+                        "xdr_union_bool_body: true arm must be named and false arm must be void!"
+                    );
+                };
+
+                XdrUnionBody::Bool(XdrUnionBoolBody { true_arm })
             }
             // XXX: remove the "Enum" case?
             TokenKind::Enum => {

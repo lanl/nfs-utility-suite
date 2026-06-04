@@ -403,18 +403,7 @@ impl ValidatedUnionBoolBody {
     fn definition_bool(&self, name: &str, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         // XXX: A Bool union nearly always has Void for the false arm.
         // Until I see an example where this is not the case, express it as an Option.
-        let Declaration::Void = self.false_arm else {
-            unimplemented!("Bool union with non-Void false arm is not supported");
-        };
-
-        if let Declaration::Void = self.true_arm {
-            unimplemented!("Bool union with Void true arm is not supported");
-        }
-
-        let inner_type = match &self.true_arm {
-            Declaration::Named(n) => n.as_type_name(tab),
-            Declaration::Void => "()".to_string(),
-        };
+        let inner_type = self.true_arm.as_type_name(tab);
 
         buf.code_block(&format!("pub struct {name}"), |buf| {
             buf.add_line(&format!("pub inner: Option<{inner_type}>,"));

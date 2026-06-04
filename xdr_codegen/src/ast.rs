@@ -108,11 +108,7 @@ pub enum XdrUnionBody {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct XdrUnionBoolBody {
-    pub true_arm: Declaration,
-    /// False arm and default arm are equivalent for a bool union.
-    /// False arm should always appear but is typically 'void'.
-    // XXX: get rid of false_arm entirely and force this to be basically an Option<>?
-    pub false_arm: Declaration,
+    pub true_arm: NamedDeclaration,
 }
 
 /// An "enum" style union (as opposed to a bool style union) is used for enum-discriminated as well
