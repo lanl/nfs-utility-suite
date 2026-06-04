@@ -109,16 +109,14 @@ impl ValidatedUnionBoolBody {
         buf.add_line("helpers::get_u32(&mut discriminant, input)?;");
         buf.block_statement("match discriminant", |buf| {
             buf.add_line("0 => (*self).inner = None,");
-            match &self.true_arm {
-                Declaration::Void => buf.add_line("_ => {}, // void"),
-                Declaration::Named(n) => {
-                    buf.code_block("_ => ", |buf| {
-                        buf.add_line(&format!("let mut val = {};", n.default_value(tab)));
-                        n.deserialize_inline(Some("val"), buf, tab);
-                        buf.add_line("(*self).inner = Some(val)");
-                    });
-                }
-            };
+            buf.code_block("_ => ", |buf| {
+                buf.add_line(&format!(
+                    "let mut val = {};",
+                    self.true_arm.default_value(tab)
+                ));
+                self.true_arm.deserialize_inline(Some("val"), buf, tab);
+                buf.add_line("(*self).inner = Some(val)");
+            });
         });
     }
 }

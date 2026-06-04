@@ -1,6 +1,4 @@
-use crate::ast::{
-    ConstDefinition, Declaration, DefaultUnionArm, NamedDeclaration, UnionArm, Value, XdrTypeDef,
-};
+use crate::ast::{ConstDefinition, DefaultUnionArm, NamedDeclaration, UnionArm, Value, XdrTypeDef};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct DefinitionSize {
@@ -65,11 +63,7 @@ pub enum ValidatedUnionBody {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct ValidatedUnionBoolBody {
-    pub true_arm: Declaration,
-    /// False arm and default arm are equivalent for a bool union.
-    /// False arm should always appear but is typically 'void'.
-    // XXX: get rid of false_arm entirely and force this to be basically an Option<>?
-    pub false_arm: Declaration,
+    pub true_arm: NamedDeclaration,
 
     pub size: DefinitionSize,
 }

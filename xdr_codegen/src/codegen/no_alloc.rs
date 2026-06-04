@@ -48,12 +48,8 @@ impl ValidatedUnionBoolBody {
         buf.code_block("match &self.inner", |buf| {
             buf.code_block("Some(val) => ", |buf| {
                 buf.serialize_int(1);
-                match &self.true_arm {
-                    Declaration::Void => {
-                        buf.add_line("// void");
-                    }
-                    Declaration::Named(n) => n.serialize_no_alloc_inline(Some("val"), buf, tab),
-                };
+                self.true_arm
+                    .serialize_no_alloc_inline(Some("val"), buf, tab);
             });
             buf.code_block("None => ", |buf| buf.serialize_int(0));
         });

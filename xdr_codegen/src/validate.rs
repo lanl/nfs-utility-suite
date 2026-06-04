@@ -308,11 +308,7 @@ impl XdrUnionBoolBody {
         _tab: &ValidatedSymbolTable,
         _size_tab: &SizeTab,
     ) -> ValidatedDefinition {
-        let arm_names: Vec<String> = [self.true_arm.name(), self.false_arm.name()]
-            .iter()
-            .filter_map(|val| *val)
-            .map(|val| val.to_string())
-            .collect();
+        let arm_names = vec![self.true_arm.name.clone()];
 
         // bool union body size is never known as there is always a void member and a non void
         // member
@@ -320,7 +316,6 @@ impl XdrUnionBoolBody {
             name: u_name,
             body: ValidatedUnionBody::Bool(ValidatedUnionBoolBody {
                 true_arm: self.true_arm,
-                false_arm: self.false_arm,
                 size: DefinitionSize {
                     known: 0,
                     deps: arm_names.clone(),
