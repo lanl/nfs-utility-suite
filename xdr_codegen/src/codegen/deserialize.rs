@@ -6,6 +6,9 @@
 use super::*;
 use crate::symbol_table::ValidatedSymbolTable;
 
+const DESERIALIZE_SIGNATURE: &str =
+    "pub fn deserialize(&mut self, input: &mut &[u8]) -> xdr_lib::Result<()>";
+
 impl Array {
     pub(super) fn deserialize_inline(
         &self,
@@ -90,16 +93,13 @@ impl NamedDeclaration {
 
 impl ValidatedUnion {
     pub(super) fn deserialize_definition(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
-        buf.code_block(
-            "pub fn deserialize(&mut self, input: &mut &[u8]) -> Result<(), xdr_lib::DeserializeError>",
-            |buf| {
-                match &self.body {
-                    ValidatedUnionBody::Bool(b) => b.deserialize_bool(buf, tab),
-                    ValidatedUnionBody::Enum(e) => e.deserialize_enum(buf, tab),
-                };
-                buf.add_line("Ok(())");
-            }
-        );
+        buf.code_block(DESERIALIZE_SIGNATURE, |buf| {
+            match &self.body {
+                ValidatedUnionBody::Bool(b) => b.deserialize_bool(buf, tab),
+                ValidatedUnionBody::Enum(e) => e.deserialize_enum(buf, tab),
+            };
+            buf.add_line("Ok(())");
+        });
     }
 }
 
@@ -164,36 +164,30 @@ impl ValidatedUnionEnumBody {
 
 impl ValidatedStruct {
     pub(super) fn deserialize_definition(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
-        buf.code_block(
-            "pub fn deserialize(&mut self, input: &mut &[u8]) -> Result<(), xdr_lib::DeserializeError>",
-            |buf| {
-                for (decl, _) in self.members.iter() {
-                    buf.add_line(&format!("// {}:", decl.name));
-                    decl.deserialize_inline(None, buf, tab);
-                }
-                buf.add_line("Ok(())");
-            },
-        );
+        buf.code_block(DESERIALIZE_SIGNATURE, |buf| {
+            for (decl, _) in self.members.iter() {
+                buf.add_line(&format!("// {}:", decl.name));
+                decl.deserialize_inline(None, buf, tab);
+            }
+            buf.add_line("Ok(())");
+        });
     }
 }
 
 impl ValidatedEnum {
     pub(super) fn deserialize_definition(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
-        buf.code_block(
-            "pub fn deserialize(&mut self, input: &mut &[u8]) -> Result<(), xdr_lib::DeserializeError>",
-            |buf| {
-                buf.add_line("let mut val = 0;");
-                buf.add_line("xdr_lib::get_i32(&mut val, input)?;");
-                buf.block_statement("*self = match val", |buf| {
-                    for variant in self.variants.iter() {
-                        let val = variant.1.as_const(tab);
-                        buf.add_line(&format!("{} => {}::{},", val, self.name, variant.0));
-                    }
-                    buf.add_line("_ => return Err(xdr_lib::DeserializeError),");
-                });
-                buf.add_line("Ok(())");
-            },
-        );
+        buf.code_block(DESERIALIZE_SIGNATURE, |buf| {
+            buf.add_line("let mut val = 0;");
+            buf.add_line("xdr_lib::get_i32(&mut val, input)?;");
+            buf.block_statement("*self = match val", |buf| {
+                for variant in self.variants.iter() {
+                    let val = variant.1.as_const(tab);
+                    buf.add_line(&format!("{} => {}::{},", val, self.name, variant.0));
+                }
+                buf.add_line("_ => return Err(xdr_lib::DeserializeError),");
+            });
+            buf.add_line("Ok(())");
+        });
     }
 }
 
