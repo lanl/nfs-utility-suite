@@ -16,3 +16,23 @@ struct Foo {
 	bool no;
 	bool yes;
 };
+
+struct Int {
+	int a;
+};
+
+struct Uint {
+	unsigned int a;
+};
+
+struct Hyper {
+	hyper a;
+};
+
+struct Uhyper {
+	unsigned hyper a;
+};
+
+struct Bool {
+	bool a;
+};
