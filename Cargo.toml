@@ -7,4 +7,5 @@ members = [
     "tests/alloc",
     "tests/no_alloc",
     "xdr_codegen",
+    "xdr_lib",
 ]

@@ -134,7 +134,7 @@ impl Array {
         };
 
         buf.add_line(&format!("offset += {var_name}.len();"));
-        buf.add_line("offset = helpers::encode_padding(offset, buf);");
+        buf.add_line("offset = xdr_lib::encode_padding(offset, buf);");
     }
 
     /// Generate the code that encodes the size of a variable length array into the message.

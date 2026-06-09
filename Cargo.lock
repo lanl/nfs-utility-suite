@@ -241,6 +241,7 @@ dependencies = [
  "rpc_protocol",
  "rpcbind",
  "xdr_codegen",
+ "xdr_lib",
 ]
 
 [[package]]
@@ -331,6 +332,7 @@ dependencies = [
  "log",
  "nix",
  "xdr_codegen",
+ "xdr_lib",
 ]
 
 [[package]]
@@ -343,6 +345,7 @@ dependencies = [
  "nix",
  "rpc_protocol",
  "xdr_codegen",
+ "xdr_lib",
 ]
 
 [[package]]
@@ -387,6 +390,7 @@ name = "test_alloc"
 version = "0.1.0"
 dependencies = [
  "xdr_codegen",
+ "xdr_lib",
 ]
 
 [[package]]
@@ -394,6 +398,7 @@ name = "test_no_alloc"
 version = "0.1.0"
 dependencies = [
  "xdr_codegen",
+ "xdr_lib",
 ]
 
 [[package]]
@@ -487,3 +492,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
 ]
+
+[[package]]
+name = "xdr_lib"
+version = "0.1.0"
