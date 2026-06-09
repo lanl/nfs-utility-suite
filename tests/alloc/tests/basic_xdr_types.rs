@@ -114,7 +114,7 @@ fn test_hello() {
     };
     let bytes = before.serialize_alloc();
     let mut after = hello::Hello::default();
-    hello::Hello::deserialize(&mut after, &mut bytes.as_slice()).unwrap();
+    after.deserialize(&mut bytes.as_slice()).unwrap();
 
     assert_eq!(before, after);
 
@@ -134,7 +134,7 @@ fn optional() {
 
     let bytes = head.serialize_alloc();
     let mut after = ListBegin::default();
-    ListBegin::deserialize(&mut after, &mut bytes.as_slice()).unwrap();
+    after.deserialize(&mut bytes.as_slice()).unwrap();
     assert_eq!(head, after);
 }
 
@@ -159,7 +159,7 @@ fn test_struct() {
     let bytes = before.serialize_alloc();
 
     let mut after = structs::Foo::default();
-    structs::Foo::deserialize(&mut after, &mut bytes.as_slice()).unwrap();
+    after.deserialize(&mut bytes.as_slice()).unwrap();
 
     assert_eq!(before, after);
 }
@@ -182,7 +182,7 @@ fn typedef() {
 
     let bytes = before.serialize_alloc();
     let mut after = File::default();
-    File::deserialize(&mut after, &mut bytes.as_slice()).unwrap();
+    after.deserialize(&mut bytes.as_slice()).unwrap();
 
     assert_eq!(before, after);
 }
@@ -290,7 +290,7 @@ fn test_enum_union() {
 
     let plants_after = plants_bytes.map(|bytes| {
         let mut after = Plant::Tree(7);
-        Plant::deserialize(&mut after, &mut bytes.as_slice()).unwrap();
+        after.deserialize(&mut bytes.as_slice()).unwrap();
         after
     });
 
@@ -310,7 +310,7 @@ fn test_enum_union_with_compound_arms() {
     let bytes = inputs.iter().map(|i| i.serialize_alloc());
     let outputs = bytes.map(|b| {
         let mut after = StuffOrPlant::default();
-        StuffOrPlant::deserialize(&mut after, &mut b.as_slice()).unwrap();
+        after.deserialize(&mut b.as_slice()).unwrap();
         after
     });
 
@@ -340,6 +340,6 @@ fn mount_proto_multiple_optionals() {
 
     let mut after = exports::default();
 
-    exports::deserialize(&mut after, &mut bytes.as_slice()).unwrap();
+    after.deserialize(&mut bytes.as_slice()).unwrap();
     assert_eq!(exports, after);
 }

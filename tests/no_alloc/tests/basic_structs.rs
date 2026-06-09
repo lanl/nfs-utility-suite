@@ -21,7 +21,7 @@ fn struct_with_primitive_types() {
 
     let mut after = Foo::default();
 
-    Foo::deserialize(&mut after, &mut bytes.as_slice()).unwrap();
+    after.deserialize(&mut bytes.as_slice()).unwrap();
 
     assert_eq!(before, after);
 }
@@ -65,7 +65,7 @@ fn struct_with_inner_struct() {
 
     let mut after = Container::default();
 
-    Container::deserialize(&mut after, &mut bytes.as_slice()).unwrap();
+    after.deserialize(&mut bytes.as_slice()).unwrap();
 
     assert_eq!(before, after);
 }
@@ -80,7 +80,7 @@ fn struct_with_typedef() {
 
     let mut after = HasTypedef::default();
 
-    HasTypedef::deserialize(&mut after, &mut bytes.as_slice()).unwrap();
+    after.deserialize(&mut bytes.as_slice()).unwrap();
 
     assert_eq!(before, after);
 }
