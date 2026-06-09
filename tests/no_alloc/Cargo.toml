@@ -3,5 +3,8 @@ name = "test_no_alloc"
 version = "0.1.0"
 edition = "2021"
 
+[dependencies]
+xdr_lib = { path = "../../xdr_lib" }
+
 [build-dependencies]
 xdr_codegen = { path = "../../xdr_codegen" }

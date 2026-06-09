@@ -1,0 +1,8 @@
+[package]
+name = "xdr_lib"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "xdr_lib"
+path = "src/lib.rs"
