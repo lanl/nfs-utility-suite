@@ -21,7 +21,7 @@ fn fixed_length_byte_arrays() {
 
     let mut after = OpaqueArrays::default();
 
-    OpaqueArrays::deserialize(&mut after, &mut bytes.as_slice()).unwrap();
+    after.deserialize(&mut bytes.as_slice()).unwrap();
 
     assert_eq!(before, after);
 }
@@ -42,7 +42,7 @@ fn limited_length_byte_arrays() {
 
     let mut after = LimitedOpaqueArrays::default();
 
-    LimitedOpaqueArrays::deserialize(&mut after, &mut bytes.as_slice()).unwrap();
+    after.deserialize(&mut bytes.as_slice()).unwrap();
 
     assert_eq!(before, after);
 }
@@ -72,7 +72,7 @@ fn unlimited_byte_array() {
     assert_eq!(504, before.serialize(&mut bytes));
 
     let mut after = UnlimitedOpaqueArray::default();
-    UnlimitedOpaqueArray::deserialize(&mut after, &mut bytes.as_slice()).unwrap();
+    after.deserialize(&mut bytes.as_slice()).unwrap();
 
     assert_eq!(before, after);
 }
@@ -88,7 +88,7 @@ fn strings() {
     assert_eq!(24, before.serialize(&mut bytes));
 
     let mut after = Strings::default();
-    Strings::deserialize(&mut after, &mut bytes.as_slice()).unwrap();
+    after.deserialize(&mut bytes.as_slice()).unwrap();
 
     assert_eq!(before, after);
 }
@@ -129,7 +129,7 @@ fn arrays_of_user_defined_type() {
 
     let mut after = IntArrays::default();
 
-    IntArrays::deserialize(&mut after, &mut bytes.as_slice()).unwrap();
+    after.deserialize(&mut bytes.as_slice()).unwrap();
 
     assert_eq!(before, after);
 }

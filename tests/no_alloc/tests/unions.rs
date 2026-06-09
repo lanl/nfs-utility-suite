@@ -14,7 +14,7 @@ fn bool_union() {
 
     let mut after = MyOption::default();
 
-    MyOption::deserialize(&mut after, &mut bytes.as_slice()).unwrap();
+    after.deserialize(&mut bytes.as_slice()).unwrap();
     assert_eq!(before, after);
 
     // False case:
@@ -22,7 +22,7 @@ fn bool_union() {
 
     assert_eq!(4, before.serialize(&mut bytes));
 
-    MyOption::deserialize(&mut after, &mut bytes.as_slice()).unwrap();
+    after.deserialize(&mut bytes.as_slice()).unwrap();
     assert_eq!(before, after);
 }
 
