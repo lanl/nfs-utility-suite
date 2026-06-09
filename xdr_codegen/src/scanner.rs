@@ -36,6 +36,7 @@ pub enum TokenKind {
     Long,
     Hyper,
     Opaque,
+    UInt64,
     String,
     Void,
 
@@ -170,6 +171,7 @@ impl<'src> Scanner<'src> {
             "int" => TokenKind::Int,
             "long" => TokenKind::Long,
             "hyper" => TokenKind::Hyper,
+            "uint64_t" => TokenKind::UInt64,
             "opaque" => TokenKind::Opaque,
             "string" => TokenKind::String,
             "void" => TokenKind::Void,

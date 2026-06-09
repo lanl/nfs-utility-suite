@@ -495,6 +495,7 @@ impl<'src> Parser<'src> {
             TokenKind::Int => XdrType::Int,
             TokenKind::Long => XdrType::Int,
             TokenKind::Hyper => XdrType::Hyper,
+            TokenKind::UInt64 => XdrType::UHyper,
             TokenKind::Float => XdrType::Float,
             TokenKind::Double => XdrType::Double,
             TokenKind::Quadruple => XdrType::Quadruple,
