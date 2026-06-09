@@ -9,7 +9,9 @@ impl std::fmt::Display for DeserializeError {
     }
 }
 
-pub fn get_i32(dst: &mut i32, input: &mut &[u8]) -> Result<(), DeserializeError> {
+pub type Result<T> = std::result::Result<T, DeserializeError>;
+
+pub fn get_i32(dst: &mut i32, input: &mut &[u8]) -> Result<()> {
     if input.len() < 4 {
         return Err(DeserializeError);
     }
@@ -19,7 +21,7 @@ pub fn get_i32(dst: &mut i32, input: &mut &[u8]) -> Result<(), DeserializeError>
     Ok(())
 }
 
-pub fn get_u32(dst: &mut u32, input: &mut &[u8]) -> Result<(), DeserializeError> {
+pub fn get_u32(dst: &mut u32, input: &mut &[u8]) -> Result<()> {
     if input.len() < 4 {
         return Err(DeserializeError);
     }
@@ -29,7 +31,7 @@ pub fn get_u32(dst: &mut u32, input: &mut &[u8]) -> Result<(), DeserializeError>
     Ok(())
 }
 
-pub fn get_i64(dst: &mut i64, input: &mut &[u8]) -> Result<(), DeserializeError> {
+pub fn get_i64(dst: &mut i64, input: &mut &[u8]) -> Result<()> {
     if input.len() < 8 {
         return Err(DeserializeError);
     }
@@ -39,7 +41,7 @@ pub fn get_i64(dst: &mut i64, input: &mut &[u8]) -> Result<(), DeserializeError>
     Ok(())
 }
 
-pub fn get_u64(dst: &mut u64, input: &mut &[u8]) -> Result<(), DeserializeError> {
+pub fn get_u64(dst: &mut u64, input: &mut &[u8]) -> Result<()> {
     if input.len() < 8 {
         return Err(DeserializeError);
     }
@@ -49,7 +51,7 @@ pub fn get_u64(dst: &mut u64, input: &mut &[u8]) -> Result<(), DeserializeError>
     Ok(())
 }
 
-pub fn get_bool(dst: &mut bool, input: &mut &[u8]) -> Result<(), DeserializeError> {
+pub fn get_bool(dst: &mut bool, input: &mut &[u8]) -> Result<()> {
     if input.len() < 4 {
         return Err(DeserializeError);
     }
