@@ -44,9 +44,10 @@ fn arrays_of_struct() {
 
 #[test]
 fn strings() {
-    let mut before = Strings::default();
-    before.str = "hello!!".into();
-    before.str_2 = "world".into();
+    let before = Strings {
+        str: "hello!!".into(),
+        str_2: "world".into(),
+    };
     let bytes = before.serialize_alloc();
     let mut after = Strings::default();
     Strings::deserialize(&mut after, &mut bytes.as_slice()).unwrap();
@@ -58,10 +59,10 @@ fn strings() {
 fn many_strings() {
     let mut before = ManyStrings::default();
     for i in 0..4 {
-        let mut s = Strings::default();
-        s.str = format!("str {i}.1").into();
-        s.str_2 = format!("str {i}.2").into();
-        before.many[i] = s;
+        before.many[i] = Strings {
+            str: format!("str {i}.1").into(),
+            str_2: format!("str {i}.2").into(),
+        };
     }
     let bytes = before.serialize_alloc();
     let mut after = ManyStrings::default();
@@ -75,7 +76,7 @@ fn identifier_array() {
     let mut before = IdentifierArray::default();
     for i in 0..AMOUNT {
         before.bytes[i as usize] = i as u8;
-        before.ints.push(std::i32::MAX - i as i32);
+        before.ints.push(i32::MAX - i as i32);
     }
     before.str = "hello".into();
     let bytes = before.serialize_alloc();
@@ -88,11 +89,11 @@ fn identifier_array() {
 #[test]
 fn many_ints() {
     let mut before = ManyInts::default();
-    before.first[0] = std::u64::MAX - 1;
+    before.first[0] = u64::MAX - 1;
     before.first[1] = 1;
     for i in 0..7 {
-        before.second.push(i as i32);
-        before.third.push(std::i64::MAX - i as i64);
+        before.second.push(i);
+        before.third.push(i64::MAX - i as i64);
     }
     let bytes = before.serialize_alloc();
     let mut after = ManyInts::default();
@@ -115,9 +116,7 @@ fn test_hello() {
     let mut after = hello::Hello::default();
     hello::Hello::deserialize(&mut after, &mut bytes.as_slice()).unwrap();
 
-    assert_eq!(before.abc, after.abc);
-    assert_eq!(before.def, after.def);
-    assert_eq!(before.favorite_fruit, after.favorite_fruit);
+    assert_eq!(before, after);
 
     assert_eq!(A_CONSTANT, 12345);
     assert_eq!(ANOTHER, 15);
@@ -130,9 +129,7 @@ use optional::*;
 fn optional() {
     let mut head = ListBegin::default();
     for i in 0..5 {
-        let mut node = ListNode::default();
-        node.data = i;
-        head.list.push(node);
+        head.list.push(ListNode { data: i });
     }
 
     let bytes = head.serialize_alloc();
@@ -164,14 +161,7 @@ fn test_struct() {
     let mut after = structs::Foo::default();
     structs::Foo::deserialize(&mut after, &mut bytes.as_slice()).unwrap();
 
-    assert_eq!(before.a, after.a);
-    assert_eq!(before.b, after.b);
-    assert_eq!(before.blah.a, after.blah.a);
-    assert_eq!(before.blah.b, after.blah.b);
-    assert_eq!(before.blah.one.x, after.blah.one.x);
-    assert_eq!(before.blah.one.y, after.blah.one.y);
-    assert_eq!(before.yes, after.yes);
-    assert_eq!(before.no, after.no);
+    assert_eq!(before, after);
 }
 
 include!(concat!(env!("OUT_DIR"), "/typedef.rs"));
@@ -260,8 +250,8 @@ fn test_bool_union_contains_enum() {
         .deserialize(&mut before_none_bytes.as_slice())
         .unwrap();
 
-    assert_eq!(before_some.inner, after_some.inner);
-    assert_eq!(before_none.inner, after_none.inner);
+    assert_eq!(before_some, after_some);
+    assert_eq!(before_none, after_none);
 }
 
 #[test]
