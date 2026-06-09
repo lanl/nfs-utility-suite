@@ -505,6 +505,12 @@ impl<'src> Parser<'src> {
                 let name = self.expect_identifier("Expected identifier after 'struct'");
                 XdrType::Name(name.to_string())
             }
+            TokenKind::Enum => {
+                // Don't allow anonymous enum declared within outer structs, but do allow using
+                // "enum identifier" as a long form of "identifier":
+                let name = self.expect_identifier("Expected identifier after 'enum'");
+                XdrType::Name(name.to_string())
+            }
             TokenKind::Identifier(name) => XdrType::Name(name.to_string()),
             _ => Parser::error("Expected type specifier to begin declaration", Some(tok)),
         }
