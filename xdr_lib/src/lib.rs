@@ -30,7 +30,7 @@ pub fn get_u32(dst: &mut u32, input: &mut &[u8]) -> Result<(), DeserializeError>
 }
 
 pub fn get_i64(dst: &mut i64, input: &mut &[u8]) -> Result<(), DeserializeError> {
-    if input.len() < 4 {
+    if input.len() < 8 {
         return Err(DeserializeError);
     }
     let (int_bytes, rest) = input.split_at(std::mem::size_of::<i64>());
@@ -40,7 +40,7 @@ pub fn get_i64(dst: &mut i64, input: &mut &[u8]) -> Result<(), DeserializeError>
 }
 
 pub fn get_u64(dst: &mut u64, input: &mut &[u8]) -> Result<(), DeserializeError> {
-    if input.len() < 4 {
+    if input.len() < 8 {
         return Err(DeserializeError);
     }
     let (int_bytes, rest) = input.split_at(std::mem::size_of::<u64>());
