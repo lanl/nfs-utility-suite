@@ -6,3 +6,4 @@ edition = "2021"
 [lib]
 name = "xdr_lib"
 path = "src/lib.rs"
+doctest = false

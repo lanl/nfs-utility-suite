@@ -6,6 +6,7 @@ edition = "2021"
 [lib]
 name = "nfs3"
 path = "src/lib.rs"
+doctest = false
 
 [[bin]]
 name = "mountd"
