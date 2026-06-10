@@ -6,6 +6,7 @@ edition = "2021"
 [lib]
 name = "rpc_protocol"
 path = "src/lib.rs"
+doctest = false
 
 
 [dependencies]
