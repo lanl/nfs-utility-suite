@@ -187,7 +187,9 @@ impl ValidatedDefinition {
         match self {
             ValidatedDefinition::Struct(_) | ValidatedDefinition::Union(_) => true,
             ValidatedDefinition::TypeDef(t) => match &t.decl.kind {
-                DeclarationKind::Scalar(ty) | DeclarationKind::Optional(ty) => ty.is_reader(tab),
+                DeclarationKind::Scalar(ty) | DeclarationKind::Optional(ty) => {
+                    ty.is_reader(tab) && !ty.self_referential_optional(tab)
+                }
                 DeclarationKind::Array(_) => false,
             },
             _ => false,
@@ -360,7 +362,7 @@ impl NamedDeclaration {
     fn is_varlen_reader(&self, tab: &ValidatedSymbolTable) -> bool {
         match &self.kind {
             DeclarationKind::Scalar(ty) | DeclarationKind::Optional(ty) => {
-                ty.is_reader(tab) && ty.size(tab).is_none()
+                ty.is_reader(tab) && ty.size(tab).is_none() && !ty.self_referential_optional(tab)
             }
             _ => false,
         }
@@ -676,6 +678,7 @@ impl ValidatedStruct {
         tab: &ValidatedSymbolTable,
     ) -> bool {
         match &decl.kind {
+            DeclarationKind::Optional(xdr_type) => xdr_type.self_referential_optional(tab),
             DeclarationKind::Scalar(xdr_type) => xdr_type.self_referential_optional(tab),
             _ => false,
         }
@@ -866,17 +869,31 @@ impl XdrType {
             return false;
         };
 
-        let ValidatedDefinition::Struct(ref s) = *tab.lookup_definition(n) else {
-            return false;
-        };
-
-        s.self_referential_optional
+        match tab.lookup_definition(n) {
+            ValidatedDefinition::TypeDef(xdr_type_def) => match &xdr_type_def.decl.kind {
+                DeclarationKind::Scalar(xdr_type) | DeclarationKind::Optional(xdr_type) => {
+                    xdr_type.self_referential_optional(tab)
+                }
+                _ => false,
+            },
+            ValidatedDefinition::Struct(s) => s.self_referential_optional,
+            _ => false,
+        }
     }
     fn optional_type_name(&self, tab: &ValidatedSymbolTable) -> String {
         let inner_type = self.as_type_name(tab);
 
         if self.self_referential_optional(tab) {
             format!("Vec<{inner_type}>")
+        } else {
+            format!("Option<{inner_type}>")
+        }
+    }
+    fn optional_type_name_zcopy(&self, tab: &ValidatedSymbolTable) -> String {
+        let inner_type = self.as_zcopy_deser_type_name(tab);
+
+        if self.self_referential_optional(tab) {
+            format!("xdr_lib::LinkedListIter::<'a, {inner_type}>")
         } else {
             format!("Option<{inner_type}>")
         }
