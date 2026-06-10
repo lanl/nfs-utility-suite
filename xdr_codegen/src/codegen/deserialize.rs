@@ -131,16 +131,21 @@ impl NamedDeclaration {
         }
     }
 
-    pub(super) fn deserialize_inline_zcopy(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
+    pub(super) fn deserialize_inline_zcopy(
+        &self,
+        buf: &mut CodeBuf,
+        tab: &ValidatedSymbolTable,
+        fallible_parent: bool,
+    ) {
         match &self.kind {
             DeclarationKind::Scalar(ty) => {
-                ty.deserialize_inline_zcopy(buf, tab);
+                ty.deserialize_inline_zcopy(buf, tab, fallible_parent);
             }
             DeclarationKind::Array(a) => {
                 a.deserialize_inline_zcopy(buf, tab);
             }
-            DeclarationKind::Optional(_o) => {
-                unimplemented!();
+            DeclarationKind::Optional(o) => {
+                o.deserialize_optional_inline_zcopy(buf, tab, fallible_parent);
             }
         }
     }
@@ -160,8 +165,8 @@ impl NamedDeclaration {
             DeclarationKind::Array(a) => {
                 a.get_size_inline_zcopy(buf, tab);
             }
-            DeclarationKind::Optional(_ty) => {
-                unimplemented!();
+            DeclarationKind::Optional(ty) => {
+                ty.get_optional_size_inline_zcopy(buf, tab, fallible_parent, member_name);
             }
         }
     }
@@ -351,14 +356,25 @@ impl ValidatedStruct {
             buf.code_block(
                 &format!("pub fn get_{}_width(&self) -> xdr_lib::Result<usize>", dep),
                 |buf| {
-                    let (member, _) = self
+                    let (member, member_off) = self
                         .members
                         .iter()
                         .find(|(nd, _)| nd.name == **dep)
                         .unwrap();
 
                     if self.member_is_self_referential(member, tab) {
-                        unimplemented!();
+                        match &member.kind {
+                            DeclarationKind::Optional(xdr_type)
+                            | DeclarationKind::Scalar(xdr_type) => {
+                                buf.add_line(&format!(
+                                    "let off = {};",
+                                    Self::offset_to_string(member_off)
+                                ));
+                                buf.add_line("let _input = &self.buf[off..];");
+                                xdr_type.get_optional_size_inline_zcopy(buf, tab, true, None);
+                            }
+                            _ => unreachable!(),
+                        };
                     } else {
                         if member.is_varlen_reader(tab) {
                             buf.add_line(&format!("self.{}.get_width()", member.name));
@@ -395,7 +411,7 @@ impl ValidatedStruct {
                     buf.add_line("let _input = &self.buf[off..];");
 
                     // Validation can be here
-                    member.deserialize_inline_zcopy(buf, tab);
+                    member.deserialize_inline_zcopy(buf, tab, false);
                 },
             );
         }
@@ -476,22 +492,30 @@ impl XdrType {
         }
     }
 
-    pub(super) fn deserialize_inline_zcopy(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
+    pub(super) fn deserialize_inline_zcopy(
+        &self,
+        buf: &mut CodeBuf,
+        tab: &ValidatedSymbolTable,
+        fallible_parent: bool,
+    ) {
         // Handle typedefs specially by finding their underlying type:
         if let XdrType::Name(name) = self {
             let definition = tab.lookup_definition(name);
             if let ValidatedDefinition::TypeDef(ref tdef) = *definition {
-                tdef.decl.deserialize_inline_zcopy(buf, tab);
+                tdef.decl
+                    .deserialize_inline_zcopy(buf, tab, fallible_parent);
                 return;
             };
         };
+
+        let unwrap_method = if fallible_parent { "?" } else { ".unwrap()" };
 
         // typedef case already handled, non-typedefs follow:
         let (method, fallible) = self.deserialize_method_zcopy(tab);
         if !fallible {
             buf.add_line(&format!("{method}(_input)"));
         } else {
-            buf.add_line(&format!("{method}(_input).unwrap()"));
+            buf.add_line(&format!("{method}(_input){unwrap_method}"));
         }
     }
 
@@ -542,6 +566,51 @@ impl XdrType {
         }
     }
 
+    pub(super) fn get_optional_size_inline_zcopy(
+        &self,
+        buf: &mut CodeBuf,
+        tab: &ValidatedSymbolTable,
+        fallible_parent: bool,
+        reader_name: Option<String>,
+    ) {
+        // Handle typedefs specially by finding their underlying type:
+        if let XdrType::Name(name) = self {
+            let definition = tab.lookup_definition(name);
+            if let ValidatedDefinition::TypeDef(ref tdef) = *definition {
+                tdef.decl
+                    .get_size_inline_zcopy(buf, tab, fallible_parent, reader_name);
+                return;
+            };
+        };
+
+        buf.add_line("let has_optional = xdr_lib::get_i32_infallible(_input);");
+        buf.code_block("match has_optional", |buf| {
+            buf.add_line("0 => Ok(4),");
+            buf.code_block("_ =>", |buf| {
+                if self.self_referential_optional(tab) {
+                    buf.add_line(&format!(
+                        "let mut it = xdr_lib::LinkedListIter::<'a, {}>::new(_input, {});",
+                        self.as_zcopy_deser_type_name(tab),
+                        self.size(tab)
+                            .map(|v| format!("Some({})", v))
+                            .unwrap_or("None".to_string())
+                    ));
+
+                    buf.add_line("it.by_ref().for_each(drop);");
+                    buf.add_line("");
+                    buf.add_line("Ok(it.off)");
+                } else if let Some(opt_size) = self.size(tab) {
+                    buf.add_line(&format!("Ok({})", opt_size + 4));
+                } else {
+                    buf.add_line("let off = off + 4;");
+                    buf.add_line("let _input = &self.buf[off..];");
+                    self.get_size_inline_zcopy(buf, tab, fallible_parent, reader_name.clone());
+                    buf.add_line("\t.map(|val| val + 4usize)");
+                }
+            });
+        });
+    }
+
     // returns (name, fallible)
     fn deserialize_method_zcopy(&self, tab: &ValidatedSymbolTable) -> (String, bool) {
         match self {
@@ -587,6 +656,37 @@ impl XdrType {
                     buf.add_line(&format!("let mut new = {};", self.default_value(tab)));
                     self.deserialize_inline("new", buf, tab);
                     buf.add_line("Some(new)");
+                })
+            });
+        }
+    }
+
+    pub(super) fn deserialize_optional_inline_zcopy(
+        &self,
+        buf: &mut CodeBuf,
+        tab: &ValidatedSymbolTable,
+        fallible_parent: bool,
+    ) {
+        if self.self_referential_optional(tab) {
+            buf.add_line(&format!(
+                "xdr_lib::LinkedListIter::<'a, {}>::new(_input, {})",
+                self.as_zcopy_deser_type_name(tab),
+                self.size(tab)
+                    .map(|v| format!("Some({})", v))
+                    .unwrap_or("None".to_string())
+            ));
+        } else {
+            buf.add_line("let has_val = xdr_lib::get_i32_infallible(_input);");
+            buf.code_block("match has_val", |buf| {
+                buf.add_line("0 => None,");
+                buf.code_block("_ =>", |buf| {
+                    buf.block_statement("let val = ", |buf| {
+                        buf.add_line("let off = off + 4;");
+                        buf.add_line("let _input = &self.buf[off..];");
+                        self.deserialize_inline_zcopy(buf, tab, fallible_parent);
+                    });
+                    buf.add_line("Some(val)");
+                    // buf.add_line("val.map(|v| Some(v))");
                 })
             });
         }

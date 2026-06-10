@@ -215,7 +215,9 @@ impl ValidatedDefinition {
         match self {
             ValidatedDefinition::Struct(_) | ValidatedDefinition::Union(_) => true,
             ValidatedDefinition::TypeDef(t) => match &t.decl.kind {
-                DeclarationKind::Scalar(ty) | DeclarationKind::Optional(ty) => ty.is_reader(tab),
+                DeclarationKind::Scalar(ty) | DeclarationKind::Optional(ty) => {
+                    ty.is_reader(tab) && !ty.self_referential_optional(tab)
+                }
                 DeclarationKind::Array(_) => false,
             },
             _ => false,
@@ -230,7 +232,7 @@ impl ValidatedDefinition {
             ValidatedDefinition::Const(c) => c.value.as_type_name(tab),
             ValidatedDefinition::TypeDef(t) => match &t.decl.kind {
                 DeclarationKind::Scalar(ty) => ty.as_zcopy_deser_type_name(tab),
-                DeclarationKind::Optional(_o) => unimplemented!(),
+                DeclarationKind::Optional(o) => o.optional_type_name_zcopy(tab),
                 DeclarationKind::Array(arr) => arr.as_zcopy_deser_type_name(tab),
             },
         }
@@ -414,7 +416,7 @@ impl NamedDeclaration {
         match &self.kind {
             DeclarationKind::Scalar(s) => s.as_zcopy_deser_type_name(tab),
             DeclarationKind::Array(arr) => arr.as_zcopy_deser_type_name(tab),
-            DeclarationKind::Optional(_o) => unimplemented!(),
+            DeclarationKind::Optional(o) => o.optional_type_name_zcopy(tab),
         }
     }
 
@@ -429,7 +431,7 @@ impl NamedDeclaration {
     fn is_varlen_reader(&self, tab: &ValidatedSymbolTable) -> bool {
         match &self.kind {
             DeclarationKind::Scalar(ty) | DeclarationKind::Optional(ty) => {
-                ty.is_reader(tab) && ty.size(tab).is_none()
+                ty.is_reader(tab) && ty.size(tab).is_none() && !ty.self_referential_optional(tab)
             }
             _ => false,
         }
@@ -743,6 +745,7 @@ impl ValidatedStruct {
         tab: &ValidatedSymbolTable,
     ) -> bool {
         match &decl.kind {
+            DeclarationKind::Optional(xdr_type) => xdr_type.self_referential_optional(tab),
             DeclarationKind::Scalar(xdr_type) => xdr_type.self_referential_optional(tab),
             _ => false,
         }
@@ -775,7 +778,7 @@ impl ValidatedStruct {
             }
 
             if let Some(last) = self_ref_last {
-                buf.add_line(&format!("{}_width: std::cell:OnceCell<usize>,", last.name));
+                buf.add_line(&format!("{}_width: std::cell::OnceCell<usize>,", last.name));
             }
         });
 
@@ -788,23 +791,26 @@ impl ValidatedStruct {
                     |buf| {
                         let deps_in_order = self.get_variable_width_members_ordered(tab);
                         for (nd, off) in deps_in_order.iter() {
+                            if self.member_is_self_referential(nd, tab) {
+                                buf.add_line(&format!("let {}_width = std::cell::OnceCell::<usize>::new();", nd.name));
+                                continue;
+                            }
+
                             buf.add_line(&format!(
                                 "let off = {};",
                                 Self::offset_to_string_localvars(off)
                             ));
                             buf.add_line("let _input = &buf[off..];");
                             if nd.is_varlen_reader(tab) {
-                                buf.add_line(&format!(
-                                    "let {} = {}::<'a>::from_buf(&buf[off..])?;",
-                                    nd.name,
-                                    nd.as_zcopy_dser_type_name(tab)
-                                        .strip_suffix("<'a>")
-                                        .unwrap()
-                                ));
-                                buf.add_line(&format!(
-                                    "let {}_width = {}.get_width()?;",
-                                    nd.name, nd.name
-                                ));
+                                    let typename = nd.as_zcopy_dser_type_name(tab);
+                                    let typename = typename.strip_suffix("<'a>").map(|rest| format!("{}::<'a>", rest)).unwrap_or(typename.to_string());
+                                    let typename = typename.strip_prefix("Option").map(|rest| format!("Option::{}", rest)).unwrap_or(typename.to_string());
+
+                                    buf.add_line(&format!("let {} = {}::from_buf(&buf[off..])?;", nd.name, typename));
+                                    buf.add_line(&format!(
+                                        "let {}_width = {}.get_width()?;",
+                                        nd.name, nd.name
+                                    ));
                             } else {
                                 buf.block_with_trailer(
                                     &format!("let {}_width = ", nd.name),
@@ -823,8 +829,13 @@ impl ValidatedStruct {
 
                                                 array.get_size_inline_zcopy(buf, tab);
                                             }
-                                            DeclarationKind::Optional(_xdr_type) => {
-                                                unimplemented!()
+                                            DeclarationKind::Optional(xdr_type) => {
+                                xdr_type.get_optional_size_inline_zcopy(
+                                    buf,
+                                    tab,
+                                    true,
+                                    None
+                                );
                                             }
                                         };
                                     },
@@ -837,6 +848,11 @@ impl ValidatedStruct {
                         buf.block_statement("let me = Self", |buf| {
                             buf.add_line("buf,");
                             for (nd, _) in deps_in_order.iter() {
+                                if self.member_is_self_referential(nd, tab) {
+                                    buf.add_line(&format!("{}_width,", nd.name));
+                                    continue;
+                                }
+
                                 if nd.is_varlen_reader(tab) {
                                     buf.add_line(&format!("{},", nd.name));
                                 } else {
@@ -1071,17 +1087,31 @@ impl XdrType {
             return false;
         };
 
-        let ValidatedDefinition::Struct(ref s) = *tab.lookup_definition(n) else {
-            return false;
-        };
-
-        s.self_referential_optional
+        match tab.lookup_definition(n) {
+            ValidatedDefinition::TypeDef(xdr_type_def) => match &xdr_type_def.decl.kind {
+                DeclarationKind::Scalar(xdr_type) | DeclarationKind::Optional(xdr_type) => {
+                    xdr_type.self_referential_optional(tab)
+                }
+                _ => false,
+            },
+            ValidatedDefinition::Struct(s) => s.self_referential_optional,
+            _ => false,
+        }
     }
     fn optional_type_name(&self, tab: &ValidatedSymbolTable) -> String {
         let inner_type = self.as_type_name(tab);
 
         if self.self_referential_optional(tab) {
             format!("Vec<{inner_type}>")
+        } else {
+            format!("Option<{inner_type}>")
+        }
+    }
+    fn optional_type_name_zcopy(&self, tab: &ValidatedSymbolTable) -> String {
+        let inner_type = self.as_zcopy_deser_type_name(tab);
+
+        if self.self_referential_optional(tab) {
+            format!("xdr_lib::LinkedListIter::<'a, {inner_type}>")
         } else {
             format!("Option<{inner_type}>")
         }
