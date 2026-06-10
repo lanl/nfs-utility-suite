@@ -27,6 +27,6 @@ impl ValidatedSymbolTable {
 
     pub fn lookup_definition(&self, name: &str) -> &ValidatedDefinition {
         self.lookup_definition_fallible(name)
-            .unwrap_or_else(|_| panic!("Could not find name \"{}\"", name))
+            .unwrap_or_else(|_| panic!("Could not find name \"{name}\""))
     }
 }
