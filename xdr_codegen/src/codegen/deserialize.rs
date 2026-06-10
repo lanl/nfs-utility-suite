@@ -163,6 +163,46 @@ impl ValidatedUnionEnumBody {
 }
 
 impl ValidatedStruct {
+    pub fn offset_to_string(off: &DeclarationOfset) -> String {
+        let code = off
+            .deps
+            .iter()
+            .map(|v| format!("self.get_{}_width()?", v))
+            .chain(
+                vec![format!("{}", off.known)]
+                    .into_iter()
+                    .filter(|v| v != "0"),
+            )
+            .collect::<Vec<String>>()
+            .join(" + ");
+
+        if code.is_empty() {
+            "0".to_string()
+        } else {
+            code.clone()
+        }
+    }
+
+    pub fn offset_to_string_infallible(off: &DeclarationOfset) -> String {
+        let code = off
+            .deps
+            .iter()
+            .map(|v| format!("self.get_{}_width().unwrap()", v))
+            .chain(
+                vec![format!("{}", off.known)]
+                    .into_iter()
+                    .filter(|v| v != "0"),
+            )
+            .collect::<Vec<String>>()
+            .join(" + ");
+
+        if code.is_empty() {
+            "0".to_string()
+        } else {
+            code.clone()
+        }
+    }
+
     pub(super) fn deserialize_definition(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         buf.code_block(DESERIALIZE_SIGNATURE, |buf| {
             for (decl, _) in self.members.iter() {

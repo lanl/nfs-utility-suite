@@ -6,6 +6,7 @@ members = [
     "rpc_protocol",
     "tests/alloc",
     "tests/no_alloc",
+    "tests/zcopy",
     "xdr_codegen",
     "xdr_lib",
 ]
