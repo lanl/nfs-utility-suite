@@ -39,6 +39,8 @@ impl ValidatedSymbolTable {
     }
 
     pub fn lookup_size(&self, name: &str) -> &DefinitionSize {
-        self.size_tab.get(name).expect("could not find size information for type \"{name}\"")
+        self.size_tab
+            .get(name)
+            .expect("could not find size information for type \"{name}\"")
     }
 }

@@ -231,7 +231,7 @@ impl ValidatedDefinition {
             ValidatedDefinition::TypeDef(t) => match &t.decl.kind {
                 DeclarationKind::Scalar(ty) => ty.as_zcopy_deser_type_name(tab),
                 DeclarationKind::Optional(_o) => unimplemented!(),
-                DeclarationKind::Array(_arr) => unimplemented!(),
+                DeclarationKind::Array(arr) => arr.as_zcopy_deser_type_name(tab),
             },
         }
     }
@@ -267,6 +267,18 @@ enum Context {
 }
 
 impl Array {
+    fn as_zcopy_deser_type_name(&self, tab: &ValidatedSymbolTable) -> String {
+        match &self.kind {
+            ArrayKind::Ascii => "&'a std::ffi::OsStr".to_string(),
+            ArrayKind::Byte => "&'a [u8]".to_string(),
+            ArrayKind::UserType(ty) => {
+                format!(
+                    "xdr_lib::ArrayIter<'a, {}>",
+                    ty.as_zcopy_deser_type_name(tab)
+                )
+            }
+        }
+    }
     // XXX: represent arrays as slices instead of as vectors?
     fn as_type_name(&self, tab: &ValidatedSymbolTable) -> String {
         let inner_type = match &self.kind {
@@ -310,6 +322,13 @@ impl Array {
         }
     }
 
+    fn zcopy_gen_inner_type(&self, tab: &ValidatedSymbolTable) -> String {
+        match &self.kind {
+            ArrayKind::Ascii | ArrayKind::Byte => "u8".to_string(),
+            ArrayKind::UserType(ty) => ty.as_zcopy_deser_type_name(tab),
+        }
+    }
+
     fn fixed_length_array_initializer(&self, val: &Value, tab: &ValidatedSymbolTable) -> String {
         let inner_type = match &self.kind {
             ArrayKind::Ascii => "std::ffi::OsString".to_string(),
@@ -336,6 +355,50 @@ impl Array {
         });
         buf.contents
     }
+
+    fn elem_size(&self, tab: &ValidatedSymbolTable) -> Option<usize> {
+        match &self.kind {
+            ArrayKind::Byte | ArrayKind::Ascii => Some(1),
+            ArrayKind::UserType(xdr_type) => xdr_type.size(tab),
+        }
+    }
+
+    // Codegen to extract the element count from an array.
+    // We default to storing in a variable called "_length".
+    // We also assume that the base offset for the array is stored in a variable called "off".
+    fn array_count_extractor(
+        &self,
+        mut varname: Option<&str>,
+        tab: &ValidatedSymbolTable,
+        advance_input_off: bool,
+        emit_lencheck: bool,
+    ) -> String {
+        let name = varname.get_or_insert("length");
+
+        match &self.size {
+            ArraySize::Fixed(value) => format!(
+                "let {}: usize = {}; let _array_count_size: usize = 0;",
+                name,
+                value.as_const(tab)
+            ),
+            _ => {
+                format!(
+                    "{}let {}: usize = xdr_lib::get_u32_infallible(_input) as usize;\nlet _array_count_size: usize = 4;{}",
+                    if emit_lencheck {
+                        "if _input.len() < 4 { return Err(xdr_lib::DeserializeError); }\n"
+                    } else {
+                        ""
+                    },
+                    name,
+                    if advance_input_off {
+                        "\nlet off = off + _array_count_size;\nlet _input = &self.buf[off..];"
+                    } else {
+                        ""
+                    }
+                )
+            }
+        }
+    }
 }
 
 impl NamedDeclaration {
@@ -350,8 +413,8 @@ impl NamedDeclaration {
     fn as_zcopy_dser_type_name(&self, tab: &ValidatedSymbolTable) -> String {
         match &self.kind {
             DeclarationKind::Scalar(s) => s.as_zcopy_deser_type_name(tab),
+            DeclarationKind::Array(arr) => arr.as_zcopy_deser_type_name(tab),
             DeclarationKind::Optional(_o) => unimplemented!(),
-            DeclarationKind::Array(_arr) => unimplemented!(),
         }
     }
 
@@ -595,12 +658,17 @@ impl ValidatedUnionEnumBody {
 }
 
 impl ValidatedStruct {
-    fn get_variable_width_members(&self, tab: &ValidatedSymbolTable) -> HashSet<&String> {
+    fn get_variable_width_last_deps(&self) -> HashSet<&String> {
         let mut deps: HashSet<&String> = HashSet::new();
         for (_, size) in self.members.iter() {
             deps.extend(size.deps.iter());
         }
 
+        deps
+    }
+
+    fn get_variable_width_members(&self, tab: &ValidatedSymbolTable) -> HashSet<&String> {
+        let mut deps: HashSet<&String> = self.get_variable_width_last_deps();
         if let Some((last, _)) = self.members.last() {
             if last.size(tab).is_none() {
                 deps.insert(&last.name);
@@ -608,6 +676,27 @@ impl ValidatedStruct {
         }
 
         deps
+    }
+
+    fn get_variable_width_members_ordered(
+        &self,
+        tab: &ValidatedSymbolTable,
+    ) -> Vec<(NamedDeclaration, DeclarationOfset)> {
+        let deps = self.get_variable_width_members(tab);
+
+        let mut vals = deps
+            .into_iter()
+            .map(|dep| {
+                self.members
+                    .clone()
+                    .into_iter()
+                    .enumerate()
+                    .find(|(_i, v)| v.0.name == **dep)
+                    .unwrap()
+            })
+            .collect::<Vec<(usize, (NamedDeclaration, DeclarationOfset))>>();
+        vals.sort_by_key(|val| val.0);
+        vals.drain(..).map(|v| v.1).collect()
     }
 
     fn codegen(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable, params: &Params) {
@@ -626,7 +715,7 @@ impl ValidatedStruct {
         } else {
             buf.code_block(&format!("impl<'a> {}Reader<'a>", self.name), |buf| {
                 buf.code_block(
-                    &format!("pub fn new(buf: &'a [u8]) -> xdr_lib::Result<Self>"),
+                    "pub fn new(buf: &'a [u8]) -> xdr_lib::Result<Self>",
                     |buf| {
                         buf.add_line("Self::from_buf(buf)");
                     },
@@ -660,20 +749,33 @@ impl ValidatedStruct {
     }
 
     fn definition_zcopy(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
-        let deps = self.get_variable_width_members(tab);
+        // let deps = self.get_variable_width_last_deps();
+        let (deps, self_ref_last) = if let Some(last) = self.members.last() {
+            if self.member_is_self_referential(&last.0, tab) {
+                (self.get_variable_width_last_deps(), Some(&last.0))
+            } else {
+                (self.get_variable_width_members(tab), None)
+            }
+        } else {
+            (self.get_variable_width_last_deps(), None)
+        };
 
         buf.add_line("#[derive(Debug, PartialEq, Clone, Default)]");
         buf.code_block(&format!("pub struct {}Reader <'a>", self.name), |buf| {
             buf.add_line("buf: &'a [u8],");
             for dep in deps.iter() {
-                buf.add_line(&format!("{}_width: usize,", dep));
-
                 let (member, _) = self.members.iter().find(|v| v.0.name == **dep).unwrap();
                 if member.is_varlen_reader(tab) {
                     let typename = member.as_zcopy_dser_type_name(tab);
 
                     buf.add_line(&format!("{}: {},", dep, typename));
+                } else {
+                    buf.add_line(&format!("{}_width: usize,", dep));
                 }
+            }
+
+            if let Some(last) = self_ref_last {
+                buf.add_line(&format!("{}_width: std::cell:OnceCell<usize>,", last.name));
             }
         });
 
@@ -684,7 +786,65 @@ impl ValidatedStruct {
                 buf.code_block(
                     "fn from_buf(buf: &'a [u8]) -> xdr_lib::Result<Self>",
                     |buf| {
-                        buf.add_line("let me = Self{ buf,..Default::default() };");
+                        let deps_in_order = self.get_variable_width_members_ordered(tab);
+                        for (nd, off) in deps_in_order.iter() {
+                            buf.add_line(&format!(
+                                "let off = {};",
+                                Self::offset_to_string_localvars(off)
+                            ));
+                            buf.add_line("let _input = &buf[off..];");
+                            if nd.is_varlen_reader(tab) {
+                                buf.add_line(&format!(
+                                    "let {} = {}::<'a>::from_buf(&buf[off..])?;",
+                                    nd.name,
+                                    nd.as_zcopy_dser_type_name(tab)
+                                        .strip_suffix("<'a>")
+                                        .unwrap()
+                                ));
+                                buf.add_line(&format!(
+                                    "let {}_width = {}.get_width()?;",
+                                    nd.name, nd.name
+                                ));
+                            } else {
+                                buf.block_with_trailer(
+                                    &format!("let {}_width = ", nd.name),
+                                    "?;",
+                                    |buf| {
+                                        match &nd.kind {
+                                            DeclarationKind::Scalar(xdr_type) => match xdr_type {
+                                                XdrType::Name(_) => {
+                                                    xdr_type.get_size_inline_zcopy(
+                                                        buf, tab, true, None,
+                                                    );
+                                                }
+                                                _ => unreachable!("we should only have indeterminate named types here"),
+                                            },
+                                            DeclarationKind::Array(array) => {
+
+                                                array.get_size_inline_zcopy(buf, tab);
+                                            }
+                                            DeclarationKind::Optional(_xdr_type) => {
+                                                unimplemented!()
+                                            }
+                                        };
+                                    },
+                                );
+                            }
+
+                            buf.add_line("");
+                        }
+
+                        buf.block_statement("let me = Self", |buf| {
+                            buf.add_line("buf,");
+                            for (nd, _) in deps_in_order.iter() {
+                                if nd.is_varlen_reader(tab) {
+                                    buf.add_line(&format!("{},", nd.name));
+                                } else {
+                                    buf.add_line(&format!("{}_width,", nd.name));
+                                }
+                            }
+                        });
+
                         buf.add_line("me.validate()");
                     },
                 );
