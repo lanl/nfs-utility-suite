@@ -167,6 +167,31 @@ impl_reader_for_numeric!(
     (bool, get_bool_infallible, 4)
 );
 
+impl<'a, T> Reader<'a> for Option<T>
+where
+    T: Reader<'a>,
+{
+    fn from_buf(buf: &'a [u8]) -> Result<Self> {
+        if buf.len() < 4 {
+            return Err(DeserializeError);
+        }
+
+        let has_optional = get_i32_infallible(buf);
+        match has_optional {
+            0 => Ok(None),
+            _ => T::from_buf(&buf[4..]).map(|v| Some(v)),
+        }
+    }
+
+    fn get_width(&self) -> Result<usize> {
+        match self {
+            Some(reader) => reader.get_width(),
+            None => Ok(0), // Or return an Error, depending on your needs
+        }
+        .map(|v| v + 4usize)
+    }
+}
+
 impl<'a, T> LinkedListIter<'a, T> {
     pub fn new(buf: &'a [u8], item_width: Option<usize>) -> Self {
         Self {
