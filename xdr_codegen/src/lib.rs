@@ -110,6 +110,11 @@ impl Compiler {
         self
     }
 
+    pub fn enable_zcopy(&mut self) -> &mut Self {
+        self.params.zcopy = true;
+        self
+    }
+
     pub fn run(&mut self) -> std::result::Result<(), Box<dyn Error>> {
         match &self.source {
             InputSource::StdIo => {

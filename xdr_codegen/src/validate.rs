@@ -154,15 +154,15 @@ impl Definition {
 }
 
 impl XdrType {
-    fn size(&self, size_tab: &SizeTab) -> Option<usize> {
+    pub fn size(&self, size_tab: &SizeTab) -> Option<usize> {
         match self {
             XdrType::Int | XdrType::UInt | XdrType::Float | XdrType::Bool => Some(4),
             XdrType::Hyper | XdrType::UHyper | XdrType::Double => Some(8),
             XdrType::Quadruple => Some(16),
             XdrType::Name(tn) => {
-                let decl_size = size_tab
-                    .get(tn)
-                    .expect("could not find size information for type \"{tn}\"");
+                let decl_size = size_tab.get(tn).unwrap_or_else(|| {
+                    panic!("could not find size information for type \"{}\"", tn)
+                });
                 if decl_size.is_determinate() {
                     Some(decl_size.known)
                 } else {
@@ -223,7 +223,7 @@ impl Declaration {
 }
 
 impl NamedDeclaration {
-    fn size(&self, tab: &ValidatedSymbolTable, size_tab: &SizeTab) -> Option<usize> {
+    pub fn size(&self, tab: &ValidatedSymbolTable, size_tab: &SizeTab) -> Option<usize> {
         match &self.kind {
             DeclarationKind::Scalar(xdr_type) => xdr_type.size(size_tab),
             DeclarationKind::Array(array) => array.size(tab, size_tab),
