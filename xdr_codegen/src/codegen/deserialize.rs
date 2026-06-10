@@ -183,6 +183,26 @@ impl ValidatedStruct {
         }
     }
 
+    pub fn offset_to_string_localvars(off: &DeclarationOfset) -> String {
+        let code = off
+            .deps
+            .iter()
+            .map(|v| format!("{}_width", v))
+            .chain(
+                vec![format!("{}", off.known)]
+                    .into_iter()
+                    .filter(|v| v != "0"),
+            )
+            .collect::<Vec<String>>()
+            .join(" + ");
+
+        if code.is_empty() {
+            "0".to_string()
+        } else {
+            code.clone()
+        }
+    }
+
     pub fn offset_to_string_infallible(off: &DeclarationOfset) -> String {
         let code = off
             .deps
