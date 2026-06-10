@@ -294,6 +294,50 @@ impl Array {
         });
         buf.contents
     }
+
+    fn elem_size(&self, tab: &ValidatedSymbolTable) -> Option<usize> {
+        match &self.kind {
+            ArrayKind::Byte | ArrayKind::Ascii => Some(1),
+            ArrayKind::UserType(xdr_type) => xdr_type.size(tab),
+        }
+    }
+
+    // Codegen to extract the element count from an array.
+    // We default to storing in a variable called "_length".
+    // We also assume that the base offset for the array is stored in a variable called "off".
+    fn array_count_extractor(
+        &self,
+        mut varname: Option<&str>,
+        tab: &ValidatedSymbolTable,
+        advance_input_off: bool,
+        emit_lencheck: bool,
+    ) -> String {
+        let name = varname.get_or_insert("length");
+
+        match &self.size {
+            ArraySize::Fixed(value) => format!(
+                "let {}: usize = {}; let _array_count_size: usize = 0;",
+                name,
+                value.as_const(tab)
+            ),
+            _ => {
+                format!(
+                    "{}let {}: usize = xdr_lib::get_u32_infallible(_input) as usize;\nlet _array_count_size: usize = 4;{}",
+                    if emit_lencheck {
+                        "if _input.len() < 4 { return Err(xdr_lib::DeserializeError); }\n"
+                    } else {
+                        ""
+                    },
+                    name,
+                    if advance_input_off {
+                        "\nlet off = off + _array_count_size;\nlet _input = &self.buf[off..];"
+                    } else {
+                        ""
+                    }
+                )
+            }
+        }
+    }
 }
 
 impl NamedDeclaration {
@@ -546,12 +590,17 @@ impl ValidatedUnionEnumBody {
 }
 
 impl ValidatedStruct {
-    fn get_variable_width_members(&self, tab: &ValidatedSymbolTable) -> HashSet<&String> {
+    fn get_variable_width_last_deps(&self) -> HashSet<&String> {
         let mut deps: HashSet<&String> = HashSet::new();
         for (_, size) in self.members.iter() {
             deps.extend(size.deps.iter());
         }
 
+        deps
+    }
+
+    fn get_variable_width_members(&self, tab: &ValidatedSymbolTable) -> HashSet<&String> {
+        let mut deps: HashSet<&String> = self.get_variable_width_last_deps();
         if let Some((last, _)) = self.members.last() {
             if last.size(tab).is_none() {
                 deps.insert(&last.name);
@@ -559,6 +608,27 @@ impl ValidatedStruct {
         }
 
         deps
+    }
+
+    fn get_variable_width_members_ordered(
+        &self,
+        tab: &ValidatedSymbolTable,
+    ) -> Vec<(NamedDeclaration, DeclarationOfset)> {
+        let deps = self.get_variable_width_members(tab);
+
+        let mut vals = deps
+            .into_iter()
+            .map(|dep| {
+                self.members
+                    .clone()
+                    .into_iter()
+                    .enumerate()
+                    .find(|(_i, v)| v.0.name == **dep)
+                    .unwrap()
+            })
+            .collect::<Vec<(usize, (NamedDeclaration, DeclarationOfset))>>();
+        vals.sort_by_key(|val| val.0);
+        vals.drain(..).map(|v| v.1).collect()
     }
 
     fn codegen(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable, params: &Params) {
@@ -578,7 +648,7 @@ impl ValidatedStruct {
         if params.zcopy {
             buf.code_block(&format!("impl<'a> {}Reader<'a>", self.name), |buf| {
                 buf.code_block(
-                    &format!("pub fn new(buf: &'a [u8]) -> xdr_lib::Result<Self>"),
+                    "pub fn new(buf: &'a [u8]) -> xdr_lib::Result<Self>",
                     |buf| {
                         buf.add_line("Self::from_buf(buf)");
                     },
