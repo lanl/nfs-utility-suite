@@ -4,6 +4,8 @@
 // This file does code generation for allocating serialization routines which return a Vec<u8>,
 // and de-serialization routines.
 
+use std::collections::HashSet;
+
 use crate::ast::*;
 use crate::ir::*;
 use crate::symbol_table::ValidatedSymbolTable;
@@ -20,6 +22,9 @@ pub struct Params {
 
     /// Whether to include allocating serialization routines.
     pub alloc: bool,
+
+    /// Whether to include zero-copy serdes routines
+    pub zcopy: bool,
 }
 
 impl Default for Params {
@@ -27,6 +32,7 @@ impl Default for Params {
         Self {
             no_alloc: false,
             alloc: true,
+            zcopy: false,
         }
     }
 }
@@ -50,9 +56,15 @@ pub fn codegen(schema: &ValidatedSchema, module_name: &str, params: &Params) -> 
             buf.add_line("");
         }
 
+        if params.zcopy {
+            buf.add_line("#[allow(unused_imports)]");
+            buf.add_line("use xdr_lib::Reader;");
+            buf.add_line("");
+        }
+
         for def in schema.definition_list.iter() {
             let def = schema.symbol_table.lookup_definition(def);
-            def.definition(buf, &schema.symbol_table);
+            def.definition(buf, &schema.symbol_table, params);
         }
 
         for def in schema.definition_list.iter() {
@@ -90,7 +102,44 @@ impl Program {
 
 impl ValidatedDefinition {
     /// The definition for the type.
-    fn definition(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
+    fn definition(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable, params: &Params) {
+        if params.zcopy {
+            self.definition_zcopy(buf, tab);
+        } else {
+            self.definition_copy(buf, tab);
+        }
+    }
+
+    fn definition_zcopy(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
+        match self {
+            ValidatedDefinition::Const(c) => {
+                match &c.value {
+                    Value::Int(n) => {
+                        buf.add_line(&format!(
+                            "pub const {}: u64 = {};",
+                            c.name.to_uppercase(),
+                            n
+                        ));
+                    }
+                    Value::Name(name) => {
+                        todo!("{name}");
+                    }
+                };
+            }
+            ValidatedDefinition::Enum(e) => {
+                e.definition(buf);
+            }
+            ValidatedDefinition::Struct(s) => {
+                s.definition_zcopy(buf, tab);
+            }
+            ValidatedDefinition::TypeDef(_) => {}
+            ValidatedDefinition::Union(_u) => {
+                unimplemented!();
+            }
+        }
+    }
+
+    fn definition_copy(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         match self {
             ValidatedDefinition::Const(c) => {
                 match &c.value {
@@ -158,6 +207,31 @@ impl ValidatedDefinition {
                 DeclarationKind::Scalar(ty) => ty.as_type_name(tab),
                 DeclarationKind::Optional(o) => o.optional_type_name(tab),
                 DeclarationKind::Array(arr) => arr.as_type_name(tab),
+            },
+        }
+    }
+
+    fn is_reader(&self, tab: &ValidatedSymbolTable) -> bool {
+        match self {
+            ValidatedDefinition::Struct(_) | ValidatedDefinition::Union(_) => true,
+            ValidatedDefinition::TypeDef(t) => match &t.decl.kind {
+                DeclarationKind::Scalar(ty) | DeclarationKind::Optional(ty) => ty.is_reader(tab),
+                DeclarationKind::Array(_) => false,
+            },
+            _ => false,
+        }
+    }
+
+    fn as_zcopy_deser_type_name(&self, tab: &ValidatedSymbolTable) -> String {
+        match self {
+            ValidatedDefinition::Struct(s) => format!("{}Reader<'a>", s.name),
+            ValidatedDefinition::Enum(e) => e.name.to_string(),
+            ValidatedDefinition::Union(_u) => unimplemented!(),
+            ValidatedDefinition::Const(c) => c.value.as_type_name(tab),
+            ValidatedDefinition::TypeDef(t) => match &t.decl.kind {
+                DeclarationKind::Scalar(ty) => ty.as_zcopy_deser_type_name(tab),
+                DeclarationKind::Optional(_o) => unimplemented!(),
+                DeclarationKind::Array(_arr) => unimplemented!(),
             },
         }
     }
@@ -272,6 +346,15 @@ impl NamedDeclaration {
             DeclarationKind::Optional(o) => o.optional_type_name(tab),
         }
     }
+
+    fn as_zcopy_dser_type_name(&self, tab: &ValidatedSymbolTable) -> String {
+        match &self.kind {
+            DeclarationKind::Scalar(s) => s.as_zcopy_deser_type_name(tab),
+            DeclarationKind::Optional(_o) => unimplemented!(),
+            DeclarationKind::Array(_arr) => unimplemented!(),
+        }
+    }
+
     fn default_value(&self, tab: &ValidatedSymbolTable) -> String {
         match &self.kind {
             DeclarationKind::Scalar(s) => s.default_value(tab),
@@ -279,21 +362,34 @@ impl NamedDeclaration {
             DeclarationKind::Optional(o) => o.optional_default_value(tab),
         }
     }
+
+    fn is_varlen_reader(&self, tab: &ValidatedSymbolTable) -> bool {
+        match &self.kind {
+            DeclarationKind::Scalar(ty) | DeclarationKind::Optional(ty) => {
+                ty.is_reader(tab) && ty.size(tab).is_none()
+            }
+            _ => false,
+        }
+    }
 }
 
 impl ValidatedUnion {
     fn codegen(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable, params: &Params) {
-        self.default(buf, tab);
-        buf.code_block(&format!("impl {}", self.name), |buf| {
-            if params.alloc {
-                self.serialize_definition(buf, tab);
-            }
-            if params.no_alloc {
-                self.serialize_no_alloc(buf, tab);
-            }
-            buf.add_line("");
-            self.deserialize_definition(buf, tab);
-        });
+        if !params.zcopy {
+            self.default(buf, tab);
+            buf.code_block(&format!("impl {}", self.name), |buf| {
+                if params.alloc {
+                    self.serialize_definition(buf, tab);
+                }
+                if params.no_alloc {
+                    self.serialize_no_alloc(buf, tab);
+                }
+                buf.add_line("");
+                self.deserialize_definition(buf, tab);
+            });
+        } else {
+            unimplemented!();
+        }
         buf.add_line("");
     }
     fn definition(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
@@ -499,18 +595,46 @@ impl ValidatedUnionEnumBody {
 }
 
 impl ValidatedStruct {
+    fn get_variable_width_members(&self, tab: &ValidatedSymbolTable) -> HashSet<&String> {
+        let mut deps: HashSet<&String> = HashSet::new();
+        for (_, size) in self.members.iter() {
+            deps.extend(size.deps.iter());
+        }
+
+        if let Some((last, _)) = self.members.last() {
+            if last.size(tab).is_none() {
+                deps.insert(&last.name);
+            }
+        }
+
+        deps
+    }
+
     fn codegen(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable, params: &Params) {
-        self.default(buf, tab);
-        buf.code_block(&format!("impl {}", self.name), |buf| {
-            if params.alloc {
-                self.serialize_definition(buf, tab);
-            }
-            if params.no_alloc {
-                self.serialize_no_alloc(buf, tab);
-            }
-            buf.add_line("");
-            self.deserialize_definition(buf, tab);
-        });
+        if !params.zcopy {
+            self.default(buf, tab);
+            buf.code_block(&format!("impl {}", self.name), |buf| {
+                if params.alloc {
+                    self.serialize_definition(buf, tab);
+                }
+                if params.no_alloc {
+                    self.serialize_no_alloc(buf, tab);
+                }
+                buf.add_line("");
+                self.deserialize_definition(buf, tab);
+            });
+        } else {
+            buf.code_block(&format!("impl<'a> {}Reader<'a>", self.name), |buf| {
+                buf.code_block(
+                    &format!("pub fn new(buf: &'a [u8]) -> xdr_lib::Result<Self>"),
+                    |buf| {
+                        buf.add_line("Self::from_buf(buf)");
+                    },
+                );
+
+                self.deserialize_definition_zcopy(buf, tab);
+            });
+        }
         buf.add_line("");
     }
 
@@ -522,6 +646,71 @@ impl ValidatedStruct {
             }
         });
         buf.add_line("");
+    }
+
+    fn member_is_self_referential(
+        &self,
+        decl: &NamedDeclaration,
+        tab: &ValidatedSymbolTable,
+    ) -> bool {
+        match &decl.kind {
+            DeclarationKind::Scalar(xdr_type) => xdr_type.self_referential_optional(tab),
+            _ => false,
+        }
+    }
+
+    fn definition_zcopy(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
+        let deps = self.get_variable_width_members(tab);
+
+        buf.add_line("#[derive(Debug, PartialEq, Clone, Default)]");
+        buf.code_block(&format!("pub struct {}Reader <'a>", self.name), |buf| {
+            buf.add_line("buf: &'a [u8],");
+            for dep in deps.iter() {
+                buf.add_line(&format!("{}_width: usize,", dep));
+
+                let (member, _) = self.members.iter().find(|v| v.0.name == **dep).unwrap();
+                if member.is_varlen_reader(tab) {
+                    let typename = member.as_zcopy_dser_type_name(tab);
+
+                    buf.add_line(&format!("{}: {},", dep, typename));
+                }
+            }
+        });
+
+        buf.add_line("");
+        buf.code_block(
+            &format!("impl<'a> xdr_lib::Reader<'a> for {}Reader <'a>", &self.name),
+            |buf| {
+                buf.code_block(
+                    "fn from_buf(buf: &'a [u8]) -> xdr_lib::Result<Self>",
+                    |buf| {
+                        buf.add_line("let me = Self{ buf,..Default::default() };");
+                        buf.add_line("me.validate()");
+                    },
+                );
+
+                buf.code_block("fn get_width(&self) -> xdr_lib::Result<usize>", |buf| {
+                    if let Some((last, last_off)) = self.members.last() {
+                        let last_size = last.size(tab);
+                        let mut overall_definition_size = DefinitionSize {
+                            known: last_off.known + last_size.unwrap_or(0),
+                            deps: last_off.deps.clone(),
+                        };
+
+                        if last_size.is_none() {
+                            overall_definition_size.deps.push(last.name.clone());
+                        }
+
+                        buf.add_line(&format!(
+                            "Ok({})",
+                            &Self::offset_to_string(&overall_definition_size)
+                        ));
+                    } else {
+                        buf.add_line("Ok(0)");
+                    }
+                });
+            },
+        );
     }
 
     fn member_declaration(
@@ -558,7 +747,12 @@ impl ValidatedEnum {
                 self.serialize_no_alloc(buf, tab);
             }
             buf.add_line("");
-            self.deserialize_definition(buf, tab);
+
+            if params.zcopy {
+                self.deserialize_definition_zcopy(buf, tab);
+            } else {
+                self.deserialize_definition(buf, tab);
+            }
         });
         buf.add_line("");
     }
@@ -610,6 +804,19 @@ impl XdrType {
             XdrType::Quadruple => todo!(),
             XdrType::Bool => "bool".to_string(),
             XdrType::Name(s) => tab.lookup_definition(s).as_type_name(tab),
+        }
+    }
+    fn as_zcopy_deser_type_name(&self, tab: &ValidatedSymbolTable) -> String {
+        match self {
+            XdrType::Int => "i32".to_string(),
+            XdrType::UInt => "u32".to_string(),
+            XdrType::Hyper => "i64".to_string(),
+            XdrType::UHyper => "u64".to_string(),
+            XdrType::Float => todo!(),
+            XdrType::Double => todo!(),
+            XdrType::Quadruple => todo!(),
+            XdrType::Bool => "bool".to_string(),
+            XdrType::Name(s) => tab.lookup_definition(s).as_zcopy_deser_type_name(tab),
         }
     }
 
@@ -726,6 +933,13 @@ impl XdrType {
             "None"
         }
         .to_string()
+    }
+
+    fn is_reader(&self, tab: &ValidatedSymbolTable) -> bool {
+        match self {
+            XdrType::Name(n) => tab.lookup_definition(n).is_reader(tab),
+            _ => false,
+        }
     }
 }
 

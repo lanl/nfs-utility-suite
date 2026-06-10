@@ -3,17 +3,25 @@
 
 use std::collections::HashMap;
 
-use crate::{ast::*, ir::ValidatedDefinition, XdrError};
+use crate::{
+    ast::*,
+    ir::{DefinitionSize, ValidatedDefinition},
+    XdrError,
+};
+
+pub type SizeTab = HashMap<String, DefinitionSize>;
 
 #[derive(Debug)]
 pub struct ValidatedSymbolTable {
     pub tab: HashMap<UnresolvedName, ValidatedDefinition>,
+    pub size_tab: SizeTab,
 }
 
 impl ValidatedSymbolTable {
     pub fn new_empty() -> ValidatedSymbolTable {
         ValidatedSymbolTable {
             tab: HashMap::<String, ValidatedDefinition>::new(),
+            size_tab: SizeTab::new(),
         }
     }
 
@@ -27,6 +35,10 @@ impl ValidatedSymbolTable {
 
     pub fn lookup_definition(&self, name: &str) -> &ValidatedDefinition {
         self.lookup_definition_fallible(name)
-            .unwrap_or_else(|_| panic!("Could not find name \"{}\"", name))
+            .unwrap_or_else(|_| panic!("Could not find name \"{name}\""))
+    }
+
+    pub fn lookup_size(&self, name: &str) -> &DefinitionSize {
+        self.size_tab.get(name).expect("could not find size information for type \"{name}\"")
     }
 }
