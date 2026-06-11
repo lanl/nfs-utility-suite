@@ -332,7 +332,7 @@ impl Array {
                     },
                     name,
                     if advance_input_off {
-                        "\nlet off = off + _array_count_size;\nlet _input = &self.buf[off..];"
+                        "\n#[allow(unused_variables)]\nlet off = off + _array_count_size;\nlet _input = &_input[_array_count_size..];"
                     } else {
                         ""
                     }
@@ -384,8 +384,9 @@ impl ValidatedUnion {
                 self.deserialize_definition(buf, tab);
             }
         });
+
         if params.zcopy {
-            unimplemented!();
+            self.deserialize_definition_zcopy(buf, tab);
         }
         buf.add_line("");
     }
@@ -396,6 +397,7 @@ impl ValidatedUnion {
             ValidatedUnionBody::Enum(e) => e.definition_enum(&self.name, buf, tab),
         };
     }
+
     fn default(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         buf.code_block(&format!("impl Default for {}", self.name), |buf| {
             buf.code_block("fn default() -> Self", |buf| match &self.body {
@@ -454,6 +456,34 @@ impl ValidatedUnionEnumBody {
                 None => {} // Don't generate anything for absent default arm.
             }
         })
+    }
+
+    pub(super) fn get_explicit_lifetime(&self, tab: &ValidatedSymbolTable) -> &str {
+        let mut explicit_lifetime: &str = "";
+        for arm in self.arms.iter() {
+            match &arm.1 {
+                Declaration::Void => {}
+                Declaration::Named(n) => {
+                    let inner_type = n.as_zcopy_dser_type_name(tab);
+
+                    if inner_type.contains("<'a>") {
+                        explicit_lifetime = "::<'a>";
+                    }
+                }
+            };
+        }
+        match &self.default_arm {
+            Some(Declaration::Void) => {}
+            Some(Declaration::Named(n)) => {
+                let inner_type = n.as_zcopy_dser_type_name(tab);
+                if inner_type.contains("<'a>") {
+                    explicit_lifetime = "::<'a>";
+                }
+            }
+            None => {} // Don't generate anything for absent default arm.
+        }
+
+        explicit_lifetime
     }
 
     /// Serialize an Enum union, either using allocating or non-allocating code depending on the
@@ -885,15 +915,6 @@ impl XdrType {
 
         if self.self_referential_optional(tab) {
             format!("Vec<{inner_type}>")
-        } else {
-            format!("Option<{inner_type}>")
-        }
-    }
-    fn optional_type_name_zcopy(&self, tab: &ValidatedSymbolTable) -> String {
-        let inner_type = self.as_zcopy_deser_type_name(tab);
-
-        if self.self_referential_optional(tab) {
-            format!("xdr_lib::LinkedListIter::<'a, {inner_type}>")
         } else {
             format!("Option<{inner_type}>")
         }

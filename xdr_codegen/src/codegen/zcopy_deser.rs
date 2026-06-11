@@ -3,18 +3,14 @@ use super::*;
 impl ValidatedDefinition {
     pub(super) fn definition_zcopy(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         match self {
-            ValidatedDefinition::Const(_) => {
-                // We assume definition_copy ran before this
-            }
-            ValidatedDefinition::Enum(_) => {
-                // We assume definition_copy ran before this
-            }
+            ValidatedDefinition::Const(_) => {}
+            ValidatedDefinition::Enum(_) => {}
             ValidatedDefinition::Struct(s) => {
                 s.definition_zcopy(buf, tab);
             }
             ValidatedDefinition::TypeDef(_) => {}
-            ValidatedDefinition::Union(_u) => {
-                unimplemented!();
+            ValidatedDefinition::Union(u) => {
+                u.definition_zcopy(buf, tab);
             }
         }
     }
@@ -23,7 +19,7 @@ impl ValidatedDefinition {
         match self {
             ValidatedDefinition::Struct(s) => format!("{}Reader<'a>", s.name),
             ValidatedDefinition::Enum(e) => e.name.to_string(),
-            ValidatedDefinition::Union(_u) => unimplemented!(),
+            ValidatedDefinition::Union(u) => format!("{}Reader<'a>", u.name),
             ValidatedDefinition::Const(c) => c.value.as_type_name(tab),
             ValidatedDefinition::TypeDef(t) => match &t.decl.kind {
                 DeclarationKind::Scalar(ty) => ty.as_zcopy_deser_type_name(tab),
@@ -35,7 +31,7 @@ impl ValidatedDefinition {
 }
 
 impl NamedDeclaration {
-    fn as_zcopy_dser_type_name(&self, tab: &ValidatedSymbolTable) -> String {
+    pub(super) fn as_zcopy_dser_type_name(&self, tab: &ValidatedSymbolTable) -> String {
         match &self.kind {
             DeclarationKind::Scalar(s) => s.as_zcopy_deser_type_name(tab),
             DeclarationKind::Array(arr) => arr.as_zcopy_deser_type_name(tab),
@@ -75,7 +71,7 @@ impl NamedDeclaration {
                 ty.deserialize_inline_zcopy(buf, tab, fallible_parent);
             }
             DeclarationKind::Array(a) => {
-                a.deserialize_inline_zcopy(buf, tab);
+                a.deserialize_inline_zcopy(buf, tab, fallible_parent);
             }
             DeclarationKind::Optional(o) => {
                 o.deserialize_optional_inline_zcopy(buf, tab, fallible_parent);
@@ -110,6 +106,16 @@ impl XdrType {
             XdrType::Quadruple => todo!(),
             XdrType::Bool => "bool".to_string(),
             XdrType::Name(s) => tab.lookup_definition(s).as_zcopy_deser_type_name(tab),
+        }
+    }
+
+    fn optional_type_name_zcopy(&self, tab: &ValidatedSymbolTable) -> String {
+        let inner_type = self.as_zcopy_deser_type_name(tab);
+
+        if self.self_referential_optional(tab) {
+            format!("xdr_lib::LinkedListIter::<'a, {inner_type}>")
+        } else {
+            format!("Option<{inner_type}>")
         }
     }
 
@@ -298,7 +304,7 @@ impl ValidatedStruct {
             (self.get_variable_width_last_deps(), None)
         };
 
-        buf.add_line("#[derive(Debug, PartialEq, Clone, Default)]");
+        buf.add_line("#[derive(Debug, PartialEq, Clone)]");
         buf.code_block(&format!("pub struct {}Reader <'a>", self.name), |buf| {
             buf.add_line("buf: &'a [u8],");
             for dep in deps.iter() {
@@ -325,7 +331,7 @@ impl ValidatedStruct {
                     "fn from_buf(buf: &'a [u8]) -> xdr_lib::Result<Self>",
                     |buf| {
                         let deps_in_order = self.get_variable_width_members_ordered(tab);
-                        for (nd, off) in deps_in_order.iter() {
+                        for (i,(nd, off)) in deps_in_order.iter().enumerate() {
                             if self.member_is_self_referential(nd, tab) {
                                 buf.add_line(&format!("let {}_width = std::cell::OnceCell::<usize>::new();", nd.name));
                                 continue;
@@ -342,10 +348,13 @@ impl ValidatedStruct {
                                     let typename = typename.strip_prefix("Option").map(|rest| format!("Option::{}", rest)).unwrap_or(typename.to_string());
 
                                     buf.add_line(&format!("let {} = {}::from_buf(&buf[off..])?;", nd.name, typename));
-                                    buf.add_line(&format!(
-                                        "let {}_width = {}.get_width()?;",
-                                        nd.name, nd.name
-                                    ));
+
+                                    if i + 1 != deps.len() {
+                                        buf.add_line(&format!(
+                                            "let {}_width = {}.get_width()?;",
+                                            nd.name, nd.name
+                                        ));
+                                    }
                             } else {
                                 buf.block_with_trailer(
                                     &format!("let {}_width = ", nd.name),
@@ -616,8 +625,13 @@ impl Array {
         }
     }
 
-    pub(super) fn deserialize_inline_zcopy(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
-        buf.add_line(&self.array_count_extractor(Some("length"), tab, true, false));
+    pub(super) fn deserialize_inline_zcopy(
+        &self,
+        buf: &mut CodeBuf,
+        tab: &ValidatedSymbolTable,
+        fallible_parent: bool,
+    ) {
+        buf.add_line(&self.array_count_extractor(Some("length"), tab, true, fallible_parent));
 
         match &self.kind {
             ArrayKind::Byte => buf.add_line("&_input[..length]"),
@@ -629,5 +643,338 @@ impl Array {
                 ));
             }
         }
+    }
+}
+
+impl ValidatedUnion {
+    pub(super) fn deserialize_definition_zcopy(
+        &self,
+        buf: &mut CodeBuf,
+        tab: &ValidatedSymbolTable,
+    ) {
+        buf.code_block(&format!("impl<'a> {}Reader<'a>", self.name), |buf| {
+            buf.code_block(
+                &format!(
+                    "pub fn deserialize(&'a self) -> {}",
+                    self.get_type_zcopy(tab)
+                ),
+                |buf| {
+                    buf.add_line("self.inner.clone()");
+                },
+            );
+        });
+    }
+
+    pub(super) fn get_type_zcopy(&self, tab: &ValidatedSymbolTable) -> String {
+        match &self.body {
+            ValidatedUnionBody::Bool(body) => format!(
+                "Option<{}>",
+                match &body.true_arm.kind {
+                    DeclarationKind::Scalar(xdr_type) | DeclarationKind::Optional(xdr_type) => {
+                        xdr_type.as_zcopy_deser_type_name(tab)
+                    }
+                    DeclarationKind::Array(array) => array.as_zcopy_deser_type_name(tab),
+                }
+            ),
+            ValidatedUnionBody::Enum(body) => {
+                format!("{}Ret{}", &self.name, body.get_explicit_lifetime(tab))
+            }
+        }
+    }
+
+    pub(super) fn definition_zcopy(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
+        buf.code_block(
+            &format!("impl<'a> xdr_lib::Reader<'a> for {}Reader<'a>", self.name),
+            |buf| {
+                buf.code_block(
+                    "fn from_buf(buf: &'a [u8]) -> xdr_lib::Result<Self>",
+                    |buf| {
+                        buf.add_line("let off = 0;");
+                        buf.add_line("let _input = &buf[off..];");
+                        match &self.body {
+                            ValidatedUnionBody::Bool(b) => {
+                                buf.block_statement("let inner = ", |buf| {
+                                    b.deserialize_bool_zcopy(buf, tab);
+                                });
+                            }
+                            ValidatedUnionBody::Enum(b) => {
+                                buf.block_statement("let inner = ", |buf| {
+                                    b.deserialize_enum_zcopy(&self.get_type_zcopy(tab), buf, tab);
+                                });
+                            }
+                        }
+                        buf.add_line("let me = Self{ buf,inner };");
+                        buf.add_line("let required = me.get_width()?;");
+                        buf.code_block("if required > me.buf.len()", |buf| {
+                            buf.add_line("return Err(xdr_lib::DeserializeError)");
+                        });
+                        buf.add_line("Ok(me)");
+                    },
+                );
+
+                buf.code_block("fn get_width(&self) -> xdr_lib::Result<usize>", |buf| {
+                    buf.add_line("let off = 0usize;");
+                    buf.add_line("let _input = &self.buf[off..];");
+                    match &self.body {
+                        ValidatedUnionBody::Bool(b) => {
+                            b.get_size_inline_bool_zcopy(buf, tab, true, None)
+                        }
+                        ValidatedUnionBody::Enum(e) => e.get_size_inline_enum_zcopy(buf, tab),
+                    };
+                });
+            },
+        );
+
+        buf.code_block(&format!("impl<'a> {}Reader<'a>", self.name), |buf| {
+            buf.add_line("");
+            buf.code_block(
+                "pub fn new(buf: &'a [u8]) -> xdr_lib::Result<Self>",
+                |buf| {
+                    buf.add_line("Self::from_buf(buf)");
+                },
+            );
+        });
+
+        match &self.body {
+            ValidatedUnionBody::Bool(b) => b.definition_bool_zcopy(&self.name, buf, tab),
+            ValidatedUnionBody::Enum(e) => e.definition_enum_zcopy(&self.name, buf, tab),
+        };
+    }
+}
+
+impl ValidatedUnionBoolBody {
+    pub(super) fn definition_bool_zcopy(
+        &self,
+        name: &str,
+        buf: &mut CodeBuf,
+        tab: &ValidatedSymbolTable,
+    ) {
+        // XXX: A Bool union nearly always has Void for the false arm.
+        // Until I see an example where this is not the case, express it as an Option.
+        let inner_type = self.true_arm.as_zcopy_dser_type_name(tab);
+        buf.add_line("#[derive(Debug, PartialEq, Clone)]");
+        buf.code_block(&format!("pub struct {name}Reader <'a>"), |buf| {
+            buf.add_line("buf: &'a [u8],");
+            buf.add_line(&format!("pub inner: Option<{inner_type}>,"));
+        });
+    }
+
+    pub(super) fn deserialize_bool_zcopy(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
+        buf.add_line("if _input.len() < 4 { return Err(xdr_lib::DeserializeError); }");
+        buf.add_line("let has_val = xdr_lib::get_i32_infallible(_input);");
+        buf.code_block("match has_val", |buf| {
+            buf.add_line("0 => None,");
+            buf.code_block("_ =>", |buf| {
+                buf.block_statement("let val = ", |buf| {
+                    let size = self.true_arm.size(tab);
+
+                    if let Some(size) = size {
+                        buf.add_line(&format!(
+                            "if _input.len() < {} {{ return Err(xdr_lib::DeserializeError) }}",
+                            size,
+                        ));
+                    }
+
+                    buf.add_line("let off = off + 4;");
+                    buf.add_line("let _input = &buf[off..];");
+                    self.true_arm.deserialize_inline_zcopy(buf, tab, true)
+                });
+                buf.add_line("Some(val)");
+            });
+        });
+    }
+
+    pub(super) fn get_size_inline_bool_zcopy(
+        &self,
+        buf: &mut CodeBuf,
+        tab: &ValidatedSymbolTable,
+        _fallible_parent: bool,
+        _cache_name: Option<String>,
+    ) {
+        // buf.code_block("if _input.len() < 4", |buf| {
+        //     buf.add_line("return Err(xdr_lib::DeserializeError);");
+        // });
+        //
+        // buf.add_line("let has_val = xdr_lib::get_i32_infallible(_input);");
+        buf.block_with_trailer("Ok(4usize + match &self.inner", "?)", |buf| {
+            buf.add_line("None => Ok(0),");
+            buf.code_block("Some(_inner) =>", |buf| {
+                if let Some(static_size) = self.true_arm.size(tab) {
+                    buf.add_line(&format!("Ok({})", static_size));
+                } else if self.true_arm.is_varlen_reader(tab) {
+                    buf.add_line("_inner.get_width()");
+                } else {
+                    self.true_arm.get_size_inline_zcopy(buf, tab, true, None);
+                }
+            });
+        });
+    }
+}
+
+impl ValidatedUnionEnumBody {
+    pub(super) fn definition_enum_zcopy(
+        &self,
+        name: &str,
+        buf: &mut CodeBuf,
+        tab: &ValidatedSymbolTable,
+    ) {
+        // For the zcopy version of this, we still need the enum definition as a return type
+        // in the Reader we generate.
+
+        let mut arms_translated: Vec<String> = Vec::new();
+        let mut explicit_lifetime: &str = "";
+        for arm in self.arms.iter() {
+            let name = ValidatedUnionEnumBody::arm_name(&arm.0);
+            match &arm.1 {
+                Declaration::Void => buf.add_line(&format!("{name},")),
+                Declaration::Named(n) => {
+                    let inner_type = n.as_zcopy_dser_type_name(tab);
+                    arms_translated.push(format!("{name}({inner_type}),"));
+
+                    if inner_type.contains("<'a>") {
+                        explicit_lifetime = "<'a>";
+                    }
+                }
+            };
+        }
+        match &self.default_arm {
+            Some(Declaration::Void) => {
+                arms_translated.push("Default,".to_string());
+            }
+            Some(Declaration::Named(n)) => {
+                let inner_type = n.as_zcopy_dser_type_name(tab);
+                arms_translated.push(format!("Default({inner_type}),"));
+                if inner_type.contains("<'a>") {
+                    explicit_lifetime = "<'a>";
+                }
+            }
+            None => {} // Don't generate anything for absent default arm.
+        }
+
+        buf.add_line("#[derive(Debug, PartialEq, Clone)]");
+        buf.code_block(&format!("pub enum {name}Ret {explicit_lifetime}"), |buf| {
+            for line in arms_translated.iter() {
+                buf.add_line(line);
+            }
+        });
+
+        buf.add_line("#[derive(Debug, PartialEq, Clone)]");
+        buf.code_block(&format!("pub struct {name}Reader <'a>"), |buf| {
+            buf.add_line("buf: &'a [u8],");
+            buf.add_line(&format!(
+                "inner: {}Ret{},",
+                name,
+                self.get_explicit_lifetime(tab)
+            ));
+        });
+    }
+
+    pub(super) fn deserialize_enum_zcopy(
+        &self,
+        u_name: &str,
+        buf: &mut CodeBuf,
+        tab: &ValidatedSymbolTable,
+    ) {
+        buf.add_line("if _input.len() < 4 { return Err(xdr_lib::DeserializeError); }");
+        buf.add_line("let discriminant = xdr_lib::get_i32_infallible(_input);");
+        buf.code_block("match discriminant", |buf| {
+            for arm in self.arms.iter() {
+                let discriminant_value = self.get_discriminant_value(&arm.0, tab);
+                buf.code_block(&format!("{discriminant_value} => "), |buf| {
+                    let arm_name = ValidatedUnionEnumBody::arm_name(&arm.0);
+                    match &arm.1 {
+                        Declaration::Void => {
+                            buf.add_line(&format!("{u_name}::{arm_name}"));
+                        }
+                        Declaration::Named(n) => {
+                            buf.add_line("let off = off + 4;");
+                            buf.add_line("let _input = &buf[off..];");
+
+                            let size = n.size(tab);
+
+                            if let Some(size) = size{
+                                buf.add_line(&format!(
+                                    "if _input.len() < {} {{ return Err(xdr_lib::DeserializeError) }}",
+                                    size,
+                                ));
+                            }
+
+                            // buf.add_line(&format!("let mut inner = {};", n.default_value(tab)));
+                            // n.deserialize_inline(Some("inner"), buf, tab);
+                            buf.block_with_trailer("let inner =", ";", |buf| {
+                                n.deserialize_inline_zcopy(buf, tab, true);
+                            });
+
+                            buf.add_line(&format!("{u_name}::{arm_name}(inner)"));
+                        }
+                    };
+                });
+            }
+            if let Some(default_arm) = &self.default_arm {
+                match default_arm {
+                    Declaration::Void => {
+                        buf.add_line(&format!("_ => {u_name}::Default,"));
+                    }
+                    Declaration::Named(n) => {
+                        buf.code_block("_ => ", |buf| {
+                            buf.add_line("let off = off + 4;");
+                            buf.add_line("let _input = &buf[off..];");
+
+                            buf.block_statement("let inner =", |buf| {
+                                n.deserialize_inline_zcopy(buf, tab, true);
+                            });
+                            buf.add_line(&format!("{u_name}::Default(inner)"));
+                        });
+                    }
+                };
+            } else {
+                buf.add_line("_ => unreachable!(),");
+            }
+        });
+    }
+
+    pub(super) fn get_size_inline_enum_zcopy(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
+        buf.code_block("if _input.len() < 4", |buf| {
+            buf.add_line("return Err(xdr_lib::DeserializeError)");
+        });
+        buf.add_line("let discriminant = xdr_lib::get_i32_infallible(_input);");
+        buf.code_block("Ok(4usize + match discriminant", |buf| {
+            for arm in self.arms.iter() {
+                let discriminant_value = self.get_discriminant_value(&arm.0, tab);
+                buf.code_block(&format!("{discriminant_value} => "), |buf| {
+                    match &arm.1 {
+                        Declaration::Void => {
+                            buf.add_line("Ok(0)");
+                        }
+                        Declaration::Named(n) => {
+                            if let Some(width) = n.size(tab) {
+                                buf.add_line(&format!("Ok({})", width));
+                            } else {
+                                buf.add_line("self.inner.get_width()")
+                            }
+                        }
+                    };
+                });
+            }
+            if let Some(default_arm) = &self.default_arm {
+                match default_arm {
+                    Declaration::Void => {
+                        buf.add_line("_ => Ok(0),");
+                    }
+                    Declaration::Named(n) => {
+                        buf.code_block("_ =>", |buf| {
+                            if let Some(width) = n.size(tab) {
+                                buf.add_line(&format!("Ok({})", width));
+                            } else {
+                                buf.add_line("self.inner.get_width()")
+                            }
+                        });
+                    }
+                };
+            } else {
+                buf.add_line("_ => return Err(xdr_lib::DeserializeError),");
+            }
+        });
+        buf.add_line("?)");
     }
 }
