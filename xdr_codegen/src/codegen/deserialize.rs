@@ -182,6 +182,39 @@ impl ValidatedUnion {
             buf.add_line("Ok(())");
         });
     }
+
+    pub(super) fn get_type_zcopy(&self, tab: &ValidatedSymbolTable) -> String {
+        match &self.body {
+            ValidatedUnionBody::Bool(body) => format!(
+                "Option<{}>",
+                match &body.true_arm.kind {
+                    DeclarationKind::Scalar(xdr_type) | DeclarationKind::Optional(xdr_type) => {
+                        xdr_type.as_zcopy_deser_type_name(tab)
+                    }
+                    DeclarationKind::Array(array) => array.as_zcopy_deser_type_name(tab),
+                }
+            ),
+            ValidatedUnionBody::Enum(body) => {
+                format!("{}{}", &self.name, body.get_explicit_lifetime(tab))
+            }
+        }
+    }
+
+    pub(super) fn deserialize_definition_zcopy(
+        &self,
+        buf: &mut CodeBuf,
+        tab: &ValidatedSymbolTable,
+    ) {
+        buf.code_block(
+            &format!(
+                "pub fn deserialize(&'a self) -> {}",
+                self.get_type_zcopy(tab)
+            ),
+            |buf| {
+                buf.add_line("self.inner.clone()");
+            },
+        );
+    }
 }
 
 impl ValidatedUnionBoolBody {
@@ -199,6 +232,53 @@ impl ValidatedUnionBoolBody {
                 buf.add_line("(*self).inner = Some(val)");
             });
         });
+    }
+
+    pub(super) fn deserialize_bool_zcopy(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
+        buf.add_line("if _input.len() < 4 { return Err(xdr_lib::DeserializeError); }");
+        buf.add_line("let has_val = xdr_lib::get_i32_infallible(_input);");
+        buf.code_block("match has_val", |buf| {
+            buf.add_line("0 => None,");
+            buf.code_block("_ =>", |buf| {
+                buf.block_statement("let val = ", |buf| {
+                    let size = self.true_arm.size(tab);
+
+                    if let Some(size) = size {
+                        buf.add_line(&format!(
+                            "if _input.len() < {} {{ return Err(xdr_lib::DeserializeError) }}",
+                            size,
+                        ));
+                    }
+
+                    buf.add_line("let off = off + 4;");
+                    buf.add_line("let _input = &buf[off..];");
+                    self.true_arm.deserialize_inline_zcopy(buf, tab, true)
+                });
+                buf.add_line("Some(val)");
+            });
+        });
+    }
+
+    pub(super) fn get_size_inline_bool_zcopy(
+        &self,
+        buf: &mut CodeBuf,
+        tab: &ValidatedSymbolTable,
+        fallible_parent: bool,
+        cache_name: Option<String>,
+    ) {
+        buf.code_block("if _input.len() < 4", |buf| {
+            buf.add_line("return Err(xdr_lib::DeserializeError);");
+        });
+
+        buf.add_line("let has_val = xdr_lib::get_i32_infallible(_input);");
+        buf.code_block("Ok(4usize + match has_val", |buf| {
+            buf.add_line("0 => Ok(0),");
+            buf.code_block("_ =>", |buf| {
+                self.true_arm
+                    .get_size_inline_zcopy(buf, tab, fallible_parent, cache_name.clone())
+            });
+        });
+        buf.add_line("?)");
     }
 }
 
@@ -240,6 +320,115 @@ impl ValidatedUnionEnumBody {
                 buf.add_line("_ => return Err(xdr_lib::DeserializeError),");
             }
         });
+    }
+
+    pub(super) fn deserialize_enum_zcopy(
+        &self,
+        u_name: &str,
+        buf: &mut CodeBuf,
+        tab: &ValidatedSymbolTable,
+    ) {
+        buf.add_line("if _input.len() < 4 { return Err(xdr_lib::DeserializeError); }");
+        buf.add_line("let discriminant = xdr_lib::get_i32_infallible(_input);");
+        buf.code_block("match discriminant", |buf| {
+            for arm in self.arms.iter() {
+                let discriminant_value = self.get_discriminant_value(&arm.0, tab);
+                buf.code_block(&format!("{discriminant_value} => "), |buf| {
+                    let arm_name = ValidatedUnionEnumBody::arm_name(&arm.0);
+                    match &arm.1 {
+                        Declaration::Void => {
+                            buf.add_line(&format!("{u_name}::{arm_name}"));
+                        }
+                        Declaration::Named(n) => {
+                            buf.add_line("let off = off + 4;");
+                            buf.add_line("let _input = &buf[off..];");
+
+                            let size = n.size(tab);
+
+                            if let Some(size) = size{
+                                buf.add_line(&format!(
+                                    "if _input.len() < {} {{ return Err(xdr_lib::DeserializeError) }}",
+                                    size,
+                                ));
+                            }
+
+                            // buf.add_line(&format!("let mut inner = {};", n.default_value(tab)));
+                            // n.deserialize_inline(Some("inner"), buf, tab);
+                            buf.block_with_trailer("let inner =", ";", |buf| {
+                                n.deserialize_inline_zcopy(buf, tab, true);
+                            });
+
+                            buf.add_line(&format!("{u_name}::{arm_name}(inner)"));
+                        }
+                    };
+                });
+            }
+            if let Some(default_arm) = &self.default_arm {
+                match default_arm {
+                    Declaration::Void => {
+                        buf.add_line(&format!("_ => {u_name}::Default,"));
+                    }
+                    Declaration::Named(n) => {
+                        buf.code_block("_ => ", |buf| {
+                            buf.add_line("let off = off + 4;");
+                            buf.add_line("let _input = &buf[off..];");
+
+                            buf.block_statement("let inner =", |buf| {
+                                n.deserialize_inline_zcopy(buf, tab, true);
+                            });
+                            buf.add_line(&format!("{u_name}::Default(inner)"));
+                        });
+                    }
+                };
+            } else {
+                buf.add_line("_ => unreachable!(),");
+            }
+        });
+    }
+
+    pub(super) fn get_size_inline_enum_zcopy(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
+        buf.code_block("if _input.len() < 4", |buf| {
+            buf.add_line("return Err(xdr_lib::DeserializeError)");
+        });
+        buf.add_line("let discriminant = xdr_lib::get_i32_infallible(_input);");
+        buf.code_block("Ok(4usize + match discriminant", |buf| {
+            for arm in self.arms.iter() {
+                let discriminant_value = self.get_discriminant_value(&arm.0, tab);
+                buf.code_block(&format!("{discriminant_value} => "), |buf| {
+                    match &arm.1 {
+                        Declaration::Void => {
+                            buf.add_line("Ok(0)");
+                        }
+                        Declaration::Named(n) => {
+                            if let Some(width) = n.size(tab) {
+                                buf.add_line(&format!("Ok({})", width));
+                            } else {
+                                buf.add_line("self.inner.get_width()")
+                            }
+                        }
+                    };
+                });
+            }
+            if let Some(default_arm) = &self.default_arm {
+                match default_arm {
+                    Declaration::Void => {
+                        buf.add_line("_ => Ok(0),");
+                    }
+                    Declaration::Named(n) => {
+                        buf.code_block("_ =>", |buf| {
+                            if let Some(width) = n.size(tab) {
+                                buf.add_line(&format!("Ok({})", width));
+                            } else {
+                                buf.add_line("self.inner.get_width()")
+                            }
+                        });
+                    }
+                };
+            } else {
+                buf.add_line("_ => unimplemented!(),");
+            }
+        });
+        buf.add_line("?)");
     }
 }
 

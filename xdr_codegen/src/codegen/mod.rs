@@ -133,8 +133,8 @@ impl ValidatedDefinition {
                 s.definition_zcopy(buf, tab);
             }
             ValidatedDefinition::TypeDef(_) => {}
-            ValidatedDefinition::Union(_u) => {
-                unimplemented!();
+            ValidatedDefinition::Union(u) => {
+                u.definition_zcopy(buf, tab);
             }
         }
     }
@@ -228,7 +228,7 @@ impl ValidatedDefinition {
         match self {
             ValidatedDefinition::Struct(s) => format!("{}Reader<'a>", s.name),
             ValidatedDefinition::Enum(e) => e.name.to_string(),
-            ValidatedDefinition::Union(_u) => unimplemented!(),
+            ValidatedDefinition::Union(u) => format!("{}Reader<'a>", u.name),
             ValidatedDefinition::Const(c) => c.value.as_type_name(tab),
             ValidatedDefinition::TypeDef(t) => match &t.decl.kind {
                 DeclarationKind::Scalar(ty) => ty.as_zcopy_deser_type_name(tab),
@@ -393,7 +393,7 @@ impl Array {
                     },
                     name,
                     if advance_input_off {
-                        "\nlet off = off + _array_count_size;\nlet _input = &self.buf[off..];"
+                        "\n#[allow(unused_variables)]\nlet off = off + _array_count_size;\nlet _input = &_input[_array_count_size..];"
                     } else {
                         ""
                     }
@@ -453,7 +453,62 @@ impl ValidatedUnion {
                 self.deserialize_definition(buf, tab);
             });
         } else {
-            unimplemented!();
+            buf.code_block(
+                &format!("impl<'a> xdr_lib::Reader<'a> for {}Reader<'a>", self.name),
+                |buf| {
+                    buf.code_block(
+                        "fn from_buf(buf: &'a [u8]) -> xdr_lib::Result<Self>",
+                        |buf| {
+                            buf.add_line("let off = 0;");
+                            buf.add_line("let _input = &buf[off..];");
+                            match &self.body {
+                                ValidatedUnionBody::Bool(b) => {
+                                    buf.block_statement("let inner = ", |buf| {
+                                        b.deserialize_bool_zcopy(buf, tab);
+                                    });
+                                }
+                                ValidatedUnionBody::Enum(b) => {
+                                    buf.block_statement("let inner = ", |buf| {
+                                        b.deserialize_enum_zcopy(&self.name, buf, tab);
+                                    });
+                                }
+                            }
+                            buf.add_line("let me = Self{ buf,inner };");
+                            buf.add_line("let required = me.get_width()?;");
+                            buf.code_block("if required > me.buf.len()", |buf| {
+                                buf.add_line("return Err(xdr_lib::DeserializeError)");
+                            });
+                            buf.add_line("Ok(me)");
+                        },
+                    );
+
+                    buf.code_block("fn get_width(&self) -> xdr_lib::Result<usize>", |buf| {
+                        buf.add_line("let off = 0usize;");
+                        buf.add_line("let _input = &self.buf[off..];");
+                        match &self.body {
+                            ValidatedUnionBody::Bool(b) => {
+                                b.get_size_inline_bool_zcopy(buf, tab, true, None)
+                            }
+                            ValidatedUnionBody::Enum(e) => e.get_size_inline_enum_zcopy(buf, tab),
+                        };
+                    });
+                },
+            );
+
+            buf.code_block(&format!("impl<'a> {}Reader<'a>", self.name), |buf| {
+                if params.zcopy {
+                    self.deserialize_definition_zcopy(buf, tab);
+                    buf.add_line("");
+                    buf.code_block(
+                        "pub fn new(buf: &'a [u8]) -> xdr_lib::Result<Self>",
+                        |buf| {
+                            buf.add_line("Self::from_buf(buf)");
+                        },
+                    );
+                } else {
+                    self.deserialize_definition(buf, tab);
+                }
+            });
         }
         buf.add_line("");
     }
@@ -462,6 +517,13 @@ impl ValidatedUnion {
         match &self.body {
             ValidatedUnionBody::Bool(b) => b.definition_bool(&self.name, buf, tab),
             ValidatedUnionBody::Enum(e) => e.definition_enum(&self.name, buf, tab),
+        };
+    }
+    fn definition_zcopy(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
+        // buf.type_header();
+        match &self.body {
+            ValidatedUnionBody::Bool(b) => b.definition_bool_zcopy(&self.name, buf, tab),
+            ValidatedUnionBody::Enum(e) => e.definition_enum_zcopy(&self.name, buf, tab),
         };
     }
     fn default(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
@@ -481,6 +543,16 @@ impl ValidatedUnionBoolBody {
         let inner_type = self.true_arm.as_type_name(tab);
 
         buf.code_block(&format!("pub struct {name}"), |buf| {
+            buf.add_line(&format!("pub inner: Option<{inner_type}>,"));
+        });
+    }
+    fn definition_bool_zcopy(&self, name: &str, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
+        // XXX: A Bool union nearly always has Void for the false arm.
+        // Until I see an example where this is not the case, express it as an Option.
+        let inner_type = self.true_arm.as_zcopy_dser_type_name(tab);
+        buf.add_line("#[derive(Debug, PartialEq, Clone)]");
+        buf.code_block(&format!("pub struct {name}Reader <'a>"), |buf| {
+            buf.add_line("buf: &'a [u8],");
             buf.add_line(&format!("pub inner: Option<{inner_type}>,"));
         });
     }
@@ -522,6 +594,86 @@ impl ValidatedUnionEnumBody {
                 None => {} // Don't generate anything for absent default arm.
             }
         })
+    }
+
+    pub(super) fn get_explicit_lifetime(&self, tab: &ValidatedSymbolTable) -> &str {
+        let mut explicit_lifetime: &str = "";
+        for arm in self.arms.iter() {
+            match &arm.1 {
+                Declaration::Void => {}
+                Declaration::Named(n) => {
+                    let inner_type = n.as_zcopy_dser_type_name(tab);
+
+                    if inner_type.contains("<'a>") {
+                        explicit_lifetime = "::<'a>";
+                    }
+                }
+            };
+        }
+        match &self.default_arm {
+            Some(Declaration::Void) => {}
+            Some(Declaration::Named(n)) => {
+                let inner_type = n.as_zcopy_dser_type_name(tab);
+                if inner_type.contains("<'a>") {
+                    explicit_lifetime = "::<'a>";
+                }
+            }
+            None => {} // Don't generate anything for absent default arm.
+        }
+
+        explicit_lifetime
+    }
+
+    fn definition_enum_zcopy(&self, name: &str, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
+        // For the zcopy version of this, we still need the enum definition as a return type
+        // in the Reader we generate.
+
+        let mut arms_translated: Vec<String> = Vec::new();
+        let mut explicit_lifetime: &str = "";
+        for arm in self.arms.iter() {
+            let name = ValidatedUnionEnumBody::arm_name(&arm.0);
+            match &arm.1 {
+                Declaration::Void => buf.add_line(&format!("{name},")),
+                Declaration::Named(n) => {
+                    let inner_type = n.as_zcopy_dser_type_name(tab);
+                    arms_translated.push(format!("{name}({inner_type}),"));
+
+                    if inner_type.contains("<'a>") {
+                        explicit_lifetime = "<'a>";
+                    }
+                }
+            };
+        }
+        match &self.default_arm {
+            Some(Declaration::Void) => {
+                arms_translated.push("Default,".to_string());
+            }
+            Some(Declaration::Named(n)) => {
+                let inner_type = n.as_zcopy_dser_type_name(tab);
+                arms_translated.push(format!("Default({inner_type}),"));
+                if inner_type.contains("<'a>") {
+                    explicit_lifetime = "<'a>";
+                }
+            }
+            None => {} // Don't generate anything for absent default arm.
+        }
+
+        buf.add_line("#[derive(Debug, PartialEq, Clone)]");
+        buf.code_block(&format!("pub enum {name} {explicit_lifetime}"), |buf| {
+            for line in arms_translated.iter() {
+                buf.add_line(line);
+            }
+        });
+
+        buf.add_line("#[derive(Debug, PartialEq, Clone)]");
+        buf.code_block(&format!("pub struct {name}Reader <'a>"), |buf| {
+            buf.add_line("buf: &'a [u8],");
+            buf.add_line(&format!(
+                "inner: {}{},",
+                name,
+                self.get_explicit_lifetime(tab)
+            ));
+        });
     }
 
     /// Serialize an Enum union, either using allocating or non-allocating code depending on the
@@ -763,7 +915,7 @@ impl ValidatedStruct {
             (self.get_variable_width_last_deps(), None)
         };
 
-        buf.add_line("#[derive(Debug, PartialEq, Clone, Default)]");
+        buf.add_line("#[derive(Debug, PartialEq, Clone)]");
         buf.code_block(&format!("pub struct {}Reader <'a>", self.name), |buf| {
             buf.add_line("buf: &'a [u8],");
             for dep in deps.iter() {
@@ -790,7 +942,7 @@ impl ValidatedStruct {
                     "fn from_buf(buf: &'a [u8]) -> xdr_lib::Result<Self>",
                     |buf| {
                         let deps_in_order = self.get_variable_width_members_ordered(tab);
-                        for (nd, off) in deps_in_order.iter() {
+                        for (i,(nd, off)) in deps_in_order.iter().enumerate() {
                             if self.member_is_self_referential(nd, tab) {
                                 buf.add_line(&format!("let {}_width = std::cell::OnceCell::<usize>::new();", nd.name));
                                 continue;
@@ -807,10 +959,13 @@ impl ValidatedStruct {
                                     let typename = typename.strip_prefix("Option").map(|rest| format!("Option::{}", rest)).unwrap_or(typename.to_string());
 
                                     buf.add_line(&format!("let {} = {}::from_buf(&buf[off..])?;", nd.name, typename));
-                                    buf.add_line(&format!(
-                                        "let {}_width = {}.get_width()?;",
-                                        nd.name, nd.name
-                                    ));
+
+                                    if i + 1 != deps.len() {
+                                        buf.add_line(&format!(
+                                            "let {}_width = {}.get_width()?;",
+                                            nd.name, nd.name
+                                        ));
+                                    }
                             } else {
                                 buf.block_with_trailer(
                                     &format!("let {}_width = ", nd.name),
