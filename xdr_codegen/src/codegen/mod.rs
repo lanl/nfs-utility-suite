@@ -367,6 +367,79 @@ impl NamedDeclaration {
             _ => false,
         }
     }
+
+    fn is_self_referential(&self, tab: &ValidatedSymbolTable) -> bool {
+        match &self.kind {
+            DeclarationKind::Scalar(xdr_type) | DeclarationKind::Optional(xdr_type) => {
+                xdr_type.self_referential_optional(tab)
+            }
+            DeclarationKind::Array(_) => false,
+        }
+    }
+
+    fn get_width(&self, buf: &mut CodeBuf, name: &str, tab: &ValidatedSymbolTable) {
+        match &self.kind {
+            DeclarationKind::Scalar(t) => t.get_width(buf, name, tab),
+            DeclarationKind::Array(array) => match &array.kind {
+                ArrayKind::Byte | ArrayKind::Ascii => {
+                    let count_addition = if let ArraySize::Fixed(_) = &array.size {
+                        ""
+                    } else {
+                        "4usize + "
+                    };
+                    buf.add_line(&format!(
+                        "{}xdr_lib::padded_4byte({}.len())",
+                        count_addition, name
+                    ))
+                }
+                ArrayKind::UserType(xdr_type) => {
+                    let elem_size = xdr_type.size(tab);
+                    let count_addition = if let ArraySize::Fixed(_) = &array.size {
+                        ""
+                    } else {
+                        "4usize + "
+                    };
+                    if let Some(elem_size) = elem_size {
+                        buf.add_line(&format!(
+                            "{}xdr_lib::padded_4byte({}.len() * {})",
+                            count_addition, name, elem_size
+                        ));
+                    } else {
+                        buf.block_with_trailer(
+                            &format!(
+                                "{count_addition}xdr_lib::padded_4byte({}.iter().map(|_v|",
+                                name
+                            ),
+                            ").sum())",
+                            |buf| {
+                                xdr_type.get_width(buf, "_v", tab);
+                            },
+                        );
+                    }
+                }
+            },
+            DeclarationKind::Optional(xdr_type) => {
+                if self.is_self_referential(tab) {
+                    buf.block_with_trailer(
+                        &format!("4usize + xdr_lib::padded_4byte({}.iter().map(|_v|", name),
+                        ").sum())",
+                        |buf| {
+                            buf.code_block("4usize +", |buf| {
+                                xdr_type.get_width(buf, "_v", tab);
+                            });
+                        },
+                    );
+                } else {
+                    buf.code_block(&format!("4usize + match &{}", name), |buf| {
+                        buf.add_line("None => 0,");
+                        buf.code_block("Some(_val) =>", |buf| {
+                            xdr_type.get_width(buf, "_val", tab);
+                        });
+                    })
+                }
+            }
+        }
+    }
 }
 
 impl ValidatedUnion {
@@ -383,6 +456,8 @@ impl ValidatedUnion {
             if !params.zcopy {
                 self.deserialize_definition(buf, tab);
             }
+            buf.add_line("");
+            self.width_getter(buf, tab);
         });
 
         if params.zcopy {
@@ -404,6 +479,44 @@ impl ValidatedUnion {
                 ValidatedUnionBody::Bool(b) => b.default_bool(buf),
                 ValidatedUnionBody::Enum(e) => e.default_enum(buf, tab),
             })
+        });
+    }
+    fn width_getter(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
+        buf.code_block("pub fn get_width(&self) -> usize", |buf| match &self.body {
+            ValidatedUnionBody::Bool(validated_union_bool_body) => {
+                buf.code_block("4usize + match &self.inner", |buf| {
+                    buf.add_line("None => 0,");
+                    buf.code_block("Some(_val) =>", |buf| {
+                        validated_union_bool_body
+                            .true_arm
+                            .get_width(buf, "_val", tab);
+                    });
+                })
+            }
+            ValidatedUnionBody::Enum(e) => {
+                buf.code_block("4usize + match &self", |buf| {
+                    for arm in e.arms.iter() {
+                        let name = ValidatedUnionEnumBody::arm_name(&arm.0);
+                        match &arm.1 {
+                            Declaration::Void => buf.add_line(&format!("Self::{name} => 0,")),
+                            Declaration::Named(n) => {
+                                buf.code_block(&format!("Self::{name}(_val) =>"), |buf| {
+                                    n.get_width(buf, "_val", tab);
+                                });
+                            }
+                        };
+                    }
+                    match &e.default_arm {
+                        Some(Declaration::Void) => buf.add_line("Self::Default => 0,"),
+                        Some(Declaration::Named(n)) => {
+                            buf.code_block("Self::Default(_val) =>", |buf| {
+                                n.get_width(buf, "_val", tab);
+                            });
+                        }
+                        None => {}
+                    }
+                });
+            }
         });
     }
 }
@@ -676,6 +789,8 @@ impl ValidatedStruct {
             if !params.zcopy {
                 self.deserialize_definition(buf, tab);
             }
+            buf.add_line("");
+            self.width_getters(buf, tab);
         });
         if params.zcopy {
             buf.code_block(&format!("impl<'a> {}Reader<'a>", self.name), |buf| {
@@ -690,6 +805,39 @@ impl ValidatedStruct {
             });
         }
         buf.add_line("");
+    }
+
+    fn width_getters(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
+        let varlen_members = self.get_variable_width_members(tab);
+
+        for name in varlen_members {
+            let (member, _) = self.members.iter().find(|val| val.0.name == *name).unwrap();
+
+            buf.code_block(&format!("fn get_{}_width(&self) -> usize", name), |buf| {
+                member.get_width(buf, &format!("self.{}", name), tab)
+            });
+        }
+
+        buf.code_block("pub fn get_width(&self) -> usize", |buf| {
+            if let Some((last, last_off)) = self.members.last() {
+                let last_size = last.size(tab);
+                let mut overall_definition_size = DefinitionSize {
+                    known: last_off.known + last_size.unwrap_or(0),
+                    deps: last_off.deps.clone(),
+                };
+
+                if last_size.is_none() {
+                    overall_definition_size.deps.push(last.name.clone());
+                }
+
+                buf.add_line(&Self::offset_to_string_with_unwrapper(
+                    &overall_definition_size,
+                    "",
+                ));
+            } else {
+                buf.add_line("0");
+            }
+        });
     }
 
     fn definition(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
@@ -932,6 +1080,33 @@ impl XdrType {
         match self {
             XdrType::Name(n) => tab.lookup_definition(n).is_reader(tab),
             _ => false,
+        }
+    }
+
+    fn get_width(&self, buf: &mut CodeBuf, name: &str, tab: &ValidatedSymbolTable) {
+        match self {
+            XdrType::Name(n) => {
+                let found = tab.lookup_definition(n);
+
+                let defsize = found.size(tab);
+
+                if defsize.is_determinate() {
+                    buf.add_line(&format!("{}", defsize.known));
+                } else {
+                    match found {
+                        ValidatedDefinition::Const(_) => unreachable!(),
+                        ValidatedDefinition::TypeDef(td) => td.decl.get_width(buf, name, tab),
+                        ValidatedDefinition::Struct(_) => {
+                            buf.add_line(&format!("{name}.get_width()"));
+                        }
+                        ValidatedDefinition::Enum(_) => buf.add_line("4"),
+                        ValidatedDefinition::Union(_) => {
+                            buf.add_line(&format!("{name}.get_width()"));
+                        }
+                    }
+                }
+            }
+            _ => buf.add_line(&format!("{}", self.size(tab).unwrap())),
         }
     }
 }

@@ -70,8 +70,12 @@ pub fn serialize_bool(src: &bool) -> [u8; 4] {
     }
 }
 
+pub fn padded_4byte(len: usize) -> usize {
+    (len + 3) & !(0b11usize)
+}
+
 pub fn encode_padding(offset: usize, buf: &mut [u8]) -> usize {
-    let padded_offset: usize = (offset + 3) & !(0b11usize);
+    let padded_offset: usize = padded_4byte(offset);
     buf[offset..padded_offset].fill(0u8);
     padded_offset
 }
