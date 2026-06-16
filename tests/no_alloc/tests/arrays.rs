@@ -15,6 +15,8 @@ fn fixed_length_byte_arrays() {
         d: [1u8, 0u8, 3u8, 4u8],
     };
 
+    assert_eq!(before.get_width(), 16);
+
     let mut bytes = vec![1; 16];
 
     assert_eq!(16, before.serialize(&mut bytes));
@@ -22,6 +24,7 @@ fn fixed_length_byte_arrays() {
     let mut after = FixedOpaqueArrays::default();
 
     after.deserialize(&mut bytes.as_slice()).unwrap();
+    assert_eq!(after.get_width(), 16);
 
     assert_eq!(before, after);
 }
@@ -35,6 +38,7 @@ fn limited_length_byte_arrays() {
         d: vec![5u8, 6u8],
         e: vec![6u8, 7u8, 8u8, 9u8],
     };
+    assert_eq!(before.get_width(), 36);
 
     let mut bytes = vec![1; 36];
 
@@ -43,6 +47,7 @@ fn limited_length_byte_arrays() {
     let mut after = LimitedOpaqueArrays::default();
 
     after.deserialize(&mut bytes.as_slice()).unwrap();
+    assert_eq!(after.get_width(), 36);
 
     assert_eq!(before, after);
 }
@@ -57,6 +62,7 @@ fn limited_length_array_exceeded() {
         d: vec![],
         e: vec![],
     };
+    assert_eq!(before.get_width(), 40);
 
     let mut bytes = vec![0; 36];
 
@@ -66,6 +72,7 @@ fn limited_length_array_exceeded() {
 #[test]
 fn unlimited_byte_array() {
     let before = UnlimitedOpaqueArray { data: vec![7; 499] };
+    assert_eq!(before.get_width(), 504);
 
     let mut bytes = vec![1u8; 504];
 
@@ -73,6 +80,7 @@ fn unlimited_byte_array() {
 
     let mut after = UnlimitedOpaqueArray::default();
     after.deserialize(&mut bytes.as_slice()).unwrap();
+    assert_eq!(after.get_width(), 504);
 
     assert_eq!(before, after);
 }
@@ -83,12 +91,14 @@ fn strings() {
         str: "hello".into(),
         str_2: "world!!!".into(),
     };
+    assert_eq!(before.get_width(), 24);
 
     let mut bytes = vec![1u8; 24];
     assert_eq!(24, before.serialize(&mut bytes));
 
     let mut after = Strings::default();
     after.deserialize(&mut bytes.as_slice()).unwrap();
+    assert_eq!(after.get_width(), 24);
 
     assert_eq!(before, after);
 }
@@ -100,6 +110,7 @@ fn limited_length_string_exceeded() {
         str: "hello, world!".into(),
         str_2: "".into(),
     };
+    assert_eq!(before.get_width(), 24);
 
     let mut bytes = vec![0; 36];
 
@@ -122,6 +133,7 @@ fn arrays_of_user_defined_type() {
             a: u32::MAX - i as u32,
         });
     }
+    assert_eq!(before.get_width(), 2100);
 
     let mut bytes = [1; 2100];
 
@@ -130,6 +142,7 @@ fn arrays_of_user_defined_type() {
     let mut after = IntArrays::default();
 
     after.deserialize(&mut bytes.as_slice()).unwrap();
+    assert_eq!(after.get_width(), 2100);
 
     assert_eq!(before, after);
 }
@@ -141,6 +154,7 @@ fn too_long_array_of_user_defined_type() {
     for i in 0..8 {
         before.limited.push(AnInt { a: i });
     }
+    assert_eq!(before.get_width(), 16 + 36 + 4);
 
     let mut bytes = [1; 2100];
 

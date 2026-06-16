@@ -15,11 +15,14 @@ fn struct_with_primitive_types() {
         d: (u32::MAX as u64) + 1,
     };
 
+    assert_eq!(before.get_width(), 24);
+
     let mut bytes = vec![0; 24];
 
     assert_eq!(24, before.serialize(&mut bytes));
 
     let mut after = Simple::default();
+    assert_eq!(after.get_width(), 24);
 
     after.deserialize(&mut bytes.as_slice()).unwrap();
 
@@ -35,6 +38,8 @@ fn buf_too_small() {
         c: 0,
         d: (u32::MAX as u64) + 1,
     };
+
+    assert_eq!(before.get_width(), 24);
 
     let mut bytes = vec![0; 23];
 
@@ -59,11 +64,14 @@ fn struct_with_inner_struct() {
         },
     };
 
+    assert_eq!(before.get_width(), 52);
+
     let mut bytes = vec![0; 52];
 
     assert_eq!(52, before.serialize(&mut bytes));
 
     let mut after = Container::default();
+    assert_eq!(after.get_width(), 52);
 
     after.deserialize(&mut bytes.as_slice()).unwrap();
 
@@ -73,12 +81,14 @@ fn struct_with_inner_struct() {
 #[test]
 fn struct_with_typedef() {
     let before = HasTypedef { blah: -12345 };
+    assert_eq!(before.get_width(), 4);
 
     let mut bytes = vec![0; 4];
 
     assert_eq!(4, before.serialize(&mut bytes));
 
     let mut after = HasTypedef::default();
+    assert_eq!(after.get_width(), 4);
 
     after.deserialize(&mut bytes.as_slice()).unwrap();
 

@@ -13,21 +13,30 @@ fn recursive_optional() {
         let node = ListNode { data: i };
         before.list.push(node);
     }
+    assert_eq!(before.get_width(), 44);
 
     let mut bytes = vec![1; 44];
     assert_eq!(44, before.serialize(&mut bytes));
+
     let mut after = ListBegin::default();
+
     after.deserialize(&mut bytes.as_slice()).unwrap();
+    assert_eq!(44, after.get_width());
+
     assert_eq!(before, after);
 }
 
 #[test]
 fn non_recursive_optional_none() {
     let before = JustAnOption { maybe: None };
+    assert_eq!(before.get_width(), 4);
 
     let mut bytes = vec![1; 4];
     assert_eq!(4, before.serialize(&mut bytes));
+
     let mut after = JustAnOption::default();
+    assert_eq!(after.get_width(), 4);
+
     after.deserialize(&mut bytes.as_slice()).unwrap();
     assert_eq!(before, after);
 }
@@ -40,11 +49,15 @@ fn non_recursive_optional_some() {
             str: "Hello, world!".into(),
         }),
     };
+    assert_eq!(before.get_width(), 28);
 
     let mut bytes = vec![1; 28];
     assert_eq!(28, before.serialize(&mut bytes));
+
     let mut after = JustAnOption::default();
     after.deserialize(&mut bytes.as_slice()).unwrap();
+    assert_eq!(after.get_width(), 28);
+
     assert_eq!(before, after);
 }
 
@@ -64,10 +77,14 @@ fn mount_proto_export_list() {
         }
         before.inner.push(export);
     }
+    assert_eq!(before.get_width(), 504);
 
     let mut bytes = vec![1; 1024];
     assert_eq!(504, before.serialize(&mut bytes));
+
     let mut after = exports::default();
     after.deserialize(&mut bytes.as_slice()).unwrap();
+    assert_eq!(after.get_width(), 504);
+
     assert_eq!(before, after);
 }

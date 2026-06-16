@@ -8,6 +8,7 @@ use unions::*;
 fn bool_union() {
     // True case:
     let before = MyOption { inner: Some(7) };
+    assert_eq!(before.get_width(), 8);
 
     let mut bytes = vec![1; 8];
     assert_eq!(8, before.serialize(&mut bytes));
@@ -15,14 +16,17 @@ fn bool_union() {
     let mut after = MyOption::default();
 
     after.deserialize(&mut bytes.as_slice()).unwrap();
+    assert_eq!(after.get_width(), 8);
     assert_eq!(before, after);
 
     // False case:
     let before = MyOption { inner: None };
 
+    assert_eq!(4, before.get_width());
     assert_eq!(4, before.serialize(&mut bytes));
 
     after.deserialize(&mut bytes.as_slice()).unwrap();
+    assert_eq!(4, after.get_width());
     assert_eq!(before, after);
 }
 
@@ -46,22 +50,28 @@ fn invalid_enum_variant() {
 #[test]
 fn enum_union_no_default() {
     let before = Stuff::one(99);
+    assert_eq!(before.get_width(), 8);
     let mut bytes = [1; 100];
     assert_eq!(8, before.serialize(&mut bytes));
     let mut after = Stuff::default();
     after.deserialize(&mut bytes.as_slice()).unwrap();
+    assert_eq!(after.get_width(), 8);
     assert_eq!(before, after);
 
     let before = Stuff::two(MyOption {
         inner: Some(i32::MAX),
     });
+    assert_eq!(before.get_width(), 12);
     assert_eq!(12, before.serialize(&mut bytes));
     after.deserialize(&mut bytes.as_slice()).unwrap();
+    assert_eq!(after.get_width(), 12);
     assert_eq!(before, after);
 
     let before = Stuff::three;
+    assert_eq!(before.get_width(), 4);
     assert_eq!(4, before.serialize(&mut bytes));
     after.deserialize(&mut bytes.as_slice()).unwrap();
+    assert_eq!(after.get_width(), 4);
     assert_eq!(before, after);
 }
 
@@ -69,9 +79,11 @@ fn enum_union_no_default() {
 fn enum_union_default_void() {
     let before = Things::Default;
     let mut bytes = [1; 4];
+    assert_eq!(before.get_width(), 4);
     assert_eq!(4, before.serialize(&mut bytes));
     let mut after = Things::default();
     after.deserialize(&mut bytes.as_slice()).unwrap();
+    assert_eq!(after.get_width(), 4);
     assert_eq!(before, after);
 }
 
@@ -79,9 +91,11 @@ fn enum_union_default_void() {
 fn enum_union_default_non_void() {
     let before = MoreThings::Default(7);
     let mut bytes = [1; 8];
+    assert_eq!(before.get_width(), 8);
     assert_eq!(8, before.serialize(&mut bytes));
     let mut after = MoreThings::default();
     after.deserialize(&mut bytes.as_slice()).unwrap();
+    assert_eq!(after.get_width(), 8);
     assert_eq!(before, after);
 }
 
