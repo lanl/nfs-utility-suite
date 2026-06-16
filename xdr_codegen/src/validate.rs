@@ -1,20 +1,14 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright 2025. Triad National Security, LLC.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use crate::{ast::*, ir::*, symbol_table::*, XdrError};
-
-pub type SizeTab = HashMap<String, DefinitionSize>;
 
 #[derive(Debug)]
 pub struct ValidatedSchema {
     /// This owns the definitions of the... definitions.
     pub symbol_table: ValidatedSymbolTable,
-
-    /// Contains the sizes of definitions in the schema.
-    #[allow(dead_code)]
-    pub size_tab: SizeTab,
 
     /// This list exists so that codegen can output code for types in the same order as those types
     /// appear in the source. The `String`s are keys into the `symbol_table`.
@@ -25,11 +19,7 @@ pub struct ValidatedSchema {
 }
 
 impl ValidatedDefinition {
-    pub fn size(
-        &self,
-        size_tab: &SizeTab,
-        validated_symbol_table: &ValidatedSymbolTable,
-    ) -> DefinitionSize {
+    pub fn size(&self, validated_symbol_table: &ValidatedSymbolTable) -> DefinitionSize {
         match self {
             ValidatedDefinition::Const(_) => DefinitionSize {
                 known: 4, // When used as an enum discriminant, the size is 4. Otherwise, this could
@@ -39,7 +29,7 @@ impl ValidatedDefinition {
             },
             ValidatedDefinition::TypeDef(type_def) => match &type_def.decl.kind {
                 DeclarationKind::Scalar(xdr_type) => {
-                    if let Some(size) = xdr_type.size(size_tab) {
+                    if let Some(size) = xdr_type.size(validated_symbol_table) {
                         DefinitionSize {
                             known: size,
                             deps: Vec::new(),
@@ -52,7 +42,7 @@ impl ValidatedDefinition {
                     }
                 }
                 DeclarationKind::Array(array) => {
-                    let arr_size = array.size(validated_symbol_table, size_tab);
+                    let arr_size = array.size(validated_symbol_table);
                     if let Some(arr_size) = arr_size {
                         DefinitionSize {
                             known: arr_size,
@@ -86,21 +76,21 @@ impl ValidatedSchema {
     ///
     /// (For now, it only checks some errors, so finding errors during codegen is still possible.)
     pub fn validate(mut schema: Schema) -> crate::Result<ValidatedSchema> {
-        let mut size_tab: SizeTab = HashMap::new();
-
         let mut validated_symbol_table = ValidatedSymbolTable::new_empty();
         let mut definition_list = Vec::new();
         for definition in schema.definitions.drain(..) {
             let definition_name = definition.get_name().to_string();
-            let validated_definition = definition.validate(&validated_symbol_table, &size_tab)?;
+            let validated_definition = definition.validate(&validated_symbol_table)?;
 
-            let size = validated_definition.size(&size_tab, &validated_symbol_table);
+            let size = validated_definition.size(&validated_symbol_table);
 
             validated_symbol_table
                 .tab
                 .insert(definition_name.clone(), validated_definition);
             definition_list.push(definition_name.clone());
-            size_tab.insert(definition_name, size);
+            validated_symbol_table
+                .size_tab
+                .insert(definition_name, size);
         }
 
         Ok(ValidatedSchema {
@@ -108,17 +98,12 @@ impl ValidatedSchema {
             definition_list,
             programs: schema.programs,
             contains_string: schema.contains_string,
-            size_tab,
         })
     }
 }
 
 impl Definition {
-    fn validate(
-        self,
-        tab: &ValidatedSymbolTable,
-        size_tab: &SizeTab,
-    ) -> crate::Result<ValidatedDefinition> {
+    fn validate(self, tab: &ValidatedSymbolTable) -> crate::Result<ValidatedDefinition> {
         let ret = match self {
             Definition::Const(cdef) => match cdef.value {
                 Value::Int(_) => ValidatedDefinition::Const(ConstDefinition {
@@ -130,7 +115,7 @@ impl Definition {
                 }
             },
             Definition::TypeDef(td) => ValidatedDefinition::TypeDef(td),
-            Definition::Struct(s) => ValidatedDefinition::Struct(s.validate(tab, size_tab)?),
+            Definition::Struct(s) => ValidatedDefinition::Struct(s.validate(tab)?),
             Definition::Enum(e) => ValidatedDefinition::Enum(ValidatedEnum {
                 name: e.name,
                 variants: e.variants,
@@ -143,8 +128,8 @@ impl Definition {
                 let name = u.name;
                 let body = u.body;
                 match body {
-                    XdrUnionBody::Bool(body) => body.validate(name, tab, size_tab),
-                    XdrUnionBody::Enum(body) => body.validate(name, tab, size_tab),
+                    XdrUnionBody::Bool(body) => body.validate(name, tab),
+                    XdrUnionBody::Enum(body) => body.validate(name, tab),
                 }
             }
         };
@@ -154,15 +139,13 @@ impl Definition {
 }
 
 impl XdrType {
-    fn size(&self, size_tab: &SizeTab) -> Option<usize> {
+    pub fn size(&self, tab: &ValidatedSymbolTable) -> Option<usize> {
         match self {
             XdrType::Int | XdrType::UInt | XdrType::Float | XdrType::Bool => Some(4),
             XdrType::Hyper | XdrType::UHyper | XdrType::Double => Some(8),
             XdrType::Quadruple => Some(16),
             XdrType::Name(tn) => {
-                let decl_size = size_tab
-                    .get(tn)
-                    .expect("could not find size information for type \"{tn}\"");
+                let decl_size = tab.lookup_size(tn);
                 if decl_size.is_determinate() {
                     Some(decl_size.known)
                 } else {
@@ -174,7 +157,7 @@ impl XdrType {
 }
 
 impl Array {
-    fn size(&self, tab: &ValidatedSymbolTable, size_tab: &SizeTab) -> Option<usize> {
+    fn size(&self, tab: &ValidatedSymbolTable) -> Option<usize> {
         match &self.size {
             ArraySize::Fixed(value) => {
                 let count = match value {
@@ -195,7 +178,7 @@ impl Array {
 
                 let single_width = match &self.kind {
                     ArrayKind::Byte | ArrayKind::Ascii => Some(1_usize),
-                    ArrayKind::UserType(xdr_type) => xdr_type.size(size_tab),
+                    ArrayKind::UserType(xdr_type) => xdr_type.size(tab),
                 };
 
                 single_width.map(|single_width| (single_width * count + 3) & !0b11_usize)
@@ -213,9 +196,9 @@ impl Declaration {
         }
     }
 
-    fn size(&self, tab: &ValidatedSymbolTable, size_tab: &SizeTab) -> Option<usize> {
+    fn size(&self, tab: &ValidatedSymbolTable) -> Option<usize> {
         if let Declaration::Named(m) = self {
-            m.size(tab, size_tab)
+            m.size(tab)
         } else {
             Some(0)
         }
@@ -223,21 +206,17 @@ impl Declaration {
 }
 
 impl NamedDeclaration {
-    fn size(&self, tab: &ValidatedSymbolTable, size_tab: &SizeTab) -> Option<usize> {
+    pub fn size(&self, tab: &ValidatedSymbolTable) -> Option<usize> {
         match &self.kind {
-            DeclarationKind::Scalar(xdr_type) => xdr_type.size(size_tab),
-            DeclarationKind::Array(array) => array.size(tab, size_tab),
+            DeclarationKind::Scalar(xdr_type) => xdr_type.size(tab),
+            DeclarationKind::Array(array) => array.size(tab),
             DeclarationKind::Optional(_) => None,
         }
     }
 }
 
 impl XdrStruct {
-    fn validate(
-        mut self,
-        tab: &ValidatedSymbolTable,
-        size_tab: &SizeTab,
-    ) -> crate::Result<ValidatedStruct> {
+    fn validate(mut self, tab: &ValidatedSymbolTable) -> crate::Result<ValidatedStruct> {
         // if the last member is a self referential optional, we can remove it
         let has_self_reference = self.self_referential_optional(tab)?;
         if has_self_reference {
@@ -253,7 +232,7 @@ impl XdrStruct {
             .members
             .drain(..)
             .map(|m| {
-                let m_size: Option<usize> = m.size(tab, size_tab);
+                let m_size: Option<usize> = m.size(tab);
                 let ret = (m, s.clone());
 
                 if let Some(m_size) = m_size {
@@ -302,12 +281,7 @@ impl XdrStruct {
 }
 
 impl XdrUnionBoolBody {
-    fn validate(
-        self,
-        u_name: String,
-        _tab: &ValidatedSymbolTable,
-        _size_tab: &SizeTab,
-    ) -> ValidatedDefinition {
+    fn validate(self, u_name: String, _tab: &ValidatedSymbolTable) -> ValidatedDefinition {
         let arm_names = vec![self.true_arm.name.clone()];
 
         // bool union body size is never known as there is always a void member and a non void
@@ -330,12 +304,7 @@ impl XdrUnionBoolBody {
 }
 
 impl XdrUnionEnumBody {
-    fn validate(
-        self,
-        u_name: String,
-        tab: &ValidatedSymbolTable,
-        size_tab: &SizeTab,
-    ) -> ValidatedDefinition {
+    fn validate(self, u_name: String, tab: &ValidatedSymbolTable) -> ValidatedDefinition {
         let mut arms_iter = self.arms.iter();
 
         let Some(discriminant_name) = &self.discriminant else {
@@ -390,10 +359,8 @@ impl XdrUnionEnumBody {
         };
 
         let size = if let Some(default_arm) = default_arm {
-            let default_size = default_arm.size(tab, size_tab);
-            if default_size.is_none()
-                || arms_iter.all(|(_, d)| d.size(tab, size_tab) == default_size)
-            {
+            let default_size = default_arm.size(tab);
+            if default_size.is_none() || arms_iter.all(|(_, d)| d.size(tab) == default_size) {
                 default_size
             } else {
                 None
@@ -401,11 +368,9 @@ impl XdrUnionEnumBody {
         } else {
             match arms_iter.next() {
                 Some((_, first)) => {
-                    let first_size = first.size(tab, size_tab);
+                    let first_size = first.size(tab);
 
-                    if first_size.is_none()
-                        || arms_iter.all(|(_, d)| d.size(tab, size_tab) == first_size)
-                    {
+                    if first_size.is_none() || arms_iter.all(|(_, d)| d.size(tab) == first_size) {
                         first_size
                     } else {
                         None
@@ -553,7 +518,7 @@ mod tests {
         assert!(matches!(foo_a.kind, DeclarationKind::Scalar(XdrType::Int)));
         assert!(foo_a_offset.known == 0);
         assert!(foo_a_offset.deps.is_empty());
-        assert!(foo_a.size(&schema.symbol_table, &schema.size_tab) == Some(4));
+        assert!(foo_a.size(&schema.symbol_table) == Some(4));
 
         let (foo_b, foo_b_offset) = &foo_def.members[1];
         assert!(foo_b.name == "b");
@@ -566,7 +531,7 @@ mod tests {
         ));
         assert!(foo_b_offset.known == 4);
         assert!(foo_b_offset.deps.is_empty());
-        assert!(foo_b.size(&schema.symbol_table, &schema.size_tab) == Some(8));
+        assert!(foo_b.size(&schema.symbol_table) == Some(8));
 
         let (foo_c, foo_c_offset) = &foo_def.members[2];
         assert!(foo_c.name == "c");
@@ -576,7 +541,7 @@ mod tests {
         ));
         assert!(foo_c_offset.known == 12);
         assert!(foo_c_offset.deps.is_empty());
-        assert!(foo_c.size(&schema.symbol_table, &schema.size_tab) == Some(8));
+        assert!(foo_c.size(&schema.symbol_table) == Some(8));
 
         assert_eq!(bar_def.size.known, foo_def.size.known * 3 + 8);
         assert!(bar_def.size.deps.is_empty());
@@ -788,7 +753,7 @@ mod tests {
         );
 
         assert_eq!(
-            schema.size_tab.get("PlantKind").unwrap(),
+            schema.symbol_table.lookup_size("PlantKind"),
             &DefinitionSize {
                 known: 4,
                 deps: Vec::new(),
@@ -796,7 +761,7 @@ mod tests {
         );
 
         assert_eq!(
-            schema.size_tab.get("PlantKindButWrapped").unwrap(),
+            schema.symbol_table.lookup_size("PlantKindButWrapped"),
             &DefinitionSize {
                 known: 4,
                 deps: Vec::new(),
@@ -804,7 +769,7 @@ mod tests {
         );
 
         assert_eq!(
-            schema.size_tab.get("Plant").unwrap(),
+            schema.symbol_table.lookup_size("Plant"),
             &DefinitionSize {
                 known: 4 + 4,
                 deps: Vec::new(),
