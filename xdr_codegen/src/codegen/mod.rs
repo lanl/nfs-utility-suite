@@ -704,11 +704,16 @@ impl XdrType {
             return false;
         };
 
-        let ValidatedDefinition::Struct(ref s) = *tab.lookup_definition(n) else {
-            return false;
-        };
-
-        s.self_referential_optional
+        match tab.lookup_definition(n) {
+            ValidatedDefinition::TypeDef(xdr_type_def) => match &xdr_type_def.decl.kind {
+                DeclarationKind::Scalar(xdr_type) | DeclarationKind::Optional(xdr_type) => {
+                    xdr_type.self_referential_optional(tab)
+                }
+                _ => false,
+            },
+            ValidatedDefinition::Struct(s) => s.self_referential_optional,
+            _ => false,
+        }
     }
     fn optional_type_name(&self, tab: &ValidatedSymbolTable) -> String {
         let inner_type = self.as_type_name(tab);
