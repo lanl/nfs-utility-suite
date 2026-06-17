@@ -8,7 +8,7 @@ use arrays::*;
 
 #[test]
 fn fixed_length_byte_arrays() {
-    let before = OpaqueArrays {
+    let before = FixedOpaqueArrays {
         a: [7u8],
         b: [1u8, 2u8],
         c: [255u8, 120u8, 0u8],
@@ -19,7 +19,7 @@ fn fixed_length_byte_arrays() {
 
     assert_eq!(16, before.serialize(&mut bytes));
 
-    let mut after = OpaqueArrays::default();
+    let mut after = FixedOpaqueArrays::default();
 
     after.deserialize(&mut bytes.as_slice()).unwrap();
 
@@ -80,8 +80,8 @@ fn unlimited_byte_array() {
 #[test]
 fn strings() {
     let before = Strings {
-        lim: "hello".into(),
-        unlim: "world!!!".into(),
+        str: "hello".into(),
+        str_2: "world!!!".into(),
     };
 
     let mut bytes = vec![1u8; 24];
@@ -97,8 +97,8 @@ fn strings() {
 #[should_panic]
 fn limited_length_string_exceeded() {
     let before = Strings {
-        lim: "hello, world!".into(),
-        unlim: "".into(),
+        str: "hello, world!".into(),
+        str_2: "".into(),
     };
 
     let mut bytes = vec![0; 36];

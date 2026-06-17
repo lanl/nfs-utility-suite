@@ -8,7 +8,7 @@ use structs::*;
 
 #[test]
 fn struct_with_primitive_types() {
-    let before = Foo {
+    let before = Simple {
         a: 7,
         b: u32::MAX - 7,
         c: 0,
@@ -19,7 +19,7 @@ fn struct_with_primitive_types() {
 
     assert_eq!(24, before.serialize(&mut bytes));
 
-    let mut after = Foo::default();
+    let mut after = Simple::default();
 
     after.deserialize(&mut bytes.as_slice()).unwrap();
 
@@ -29,7 +29,7 @@ fn struct_with_primitive_types() {
 #[test]
 #[should_panic]
 fn buf_too_small() {
-    let before = Foo {
+    let before = Simple {
         a: 7,
         b: u32::MAX - 7,
         c: 0,
@@ -44,14 +44,14 @@ fn buf_too_small() {
 #[test]
 fn struct_with_inner_struct() {
     let before = Container {
-        first: Foo {
+        first: Simple {
             a: 7,
             b: u32::MAX - 7,
             c: 0,
             d: (u32::MAX as u64) + 1,
         },
         middle: true,
-        last: Foo {
+        last: Simple {
             a: 1,
             b: 2,
             c: 3,

@@ -35,11 +35,14 @@ fn non_recursive_optional_none() {
 #[test]
 fn non_recursive_optional_some() {
     let before = JustAnOption {
-        maybe: Some(NonRecursive { stuff: 49 }),
+        maybe: Some(NonRecursive {
+            stuff: 49,
+            str: "Hello, world!".into(),
+        }),
     };
 
-    let mut bytes = vec![1; 8];
-    assert_eq!(8, before.serialize(&mut bytes));
+    let mut bytes = vec![1; 28];
+    assert_eq!(28, before.serialize(&mut bytes));
     let mut after = JustAnOption::default();
     after.deserialize(&mut bytes.as_slice()).unwrap();
     assert_eq!(before, after);
