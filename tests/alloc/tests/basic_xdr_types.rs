@@ -147,6 +147,7 @@ fn test_struct() {
             a: 17,
             b: -489,
             one: structs::Another {
+                val: structs::Val::two,
                 x: -2199023255535,
                 y: 70368744177664,
             },

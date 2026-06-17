@@ -1,4 +1,11 @@
+enum Val {
+    one = 1,
+    two = 2,
+    three = 3
+};
+
 struct Another {
+    Val val;
 	hyper x;
 	unsigned hyper y;
 };
@@ -15,6 +22,20 @@ struct Foo {
 	unsigned int b;
 	bool no;
 	bool yes;
+};
+
+struct Simple {
+	int a;
+	unsigned int b;
+	hyper c;
+	unsigned hyper d;
+};
+
+
+struct Container {
+	Simple first;
+	bool middle;
+	Simple last;
 };
 
 struct Int {
@@ -35,4 +56,10 @@ struct Uhyper {
 
 struct Bool {
 	bool a;
+};
+
+typedef int my_int_type;
+
+struct HasTypedef {
+	my_int_type blah;
 };
