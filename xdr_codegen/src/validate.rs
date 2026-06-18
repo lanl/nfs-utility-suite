@@ -319,7 +319,7 @@ impl XdrUnionEnumBody {
                 .map(|(var_name, _)| var_name.clone())
                 .collect(),
             _ => {
-                todo!("we currently do not support discriminant types outside of enum for our enum descriminant")
+                todo!("we currently do not support discriminant types outside of enum for our enum discriminant")
             }
         };
         let mut left = all_possible.clone();

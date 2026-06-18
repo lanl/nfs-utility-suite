@@ -1,9 +1,11 @@
+use std::{ffi::OsString, str::FromStr};
+
 use rand::distr::{Alphanumeric, SampleString};
 
 include!(concat!(env!("OUT_DIR"), "/arrays.rs"));
 
 use crate::arrays::*;
-use xdr_lib::Reader;
+use xdr_lib::{DeserializeError, Reader};
 
 #[test]
 fn test_opaque_arrays_minsize() {
@@ -34,6 +36,71 @@ fn test_opaque_arrays() {
     assert_eq!(reader.get_bytes(), [0xF, 0xF, 0xF]);
     assert_eq!(reader.get_bytes_2(), bytes2.as_slice());
     assert_eq!(reader.get_bytes_3(), bytes3.as_slice());
+}
+
+#[test]
+fn test_opaque_arrays_size_check() {
+    let data: Vec<u8> = vec![0x0, 0x0];
+    assert!(OpaqueArraysReader::new(data.as_slice()).is_err());
+}
+
+#[test]
+fn test_opaque_arrays_missing_bytes_2_count() {
+    let data: Vec<u8> = vec![0xF, 0xF, 0xF];
+    assert!(OpaqueArraysReader::new(data.as_slice()).is_err());
+
+    let data: Vec<u8> = vec![0xF, 0xF, 0xF, 0x1, 0x1, 0x1];
+    assert!(OpaqueArraysReader::new(data.as_slice()).is_err());
+}
+
+#[test]
+fn test_opaque_arrays_missing_bytes_2() {
+    #[rustfmt::skip]
+    let data: Vec<u8> = vec![
+        0xF, 0xF, 0xF, 0x0, // bytes
+        0x0, 0x0, 0x0, 0x1, // bytes_2_count
+        0x1                 // bytes_2
+    ];
+
+    assert!(OpaqueArraysReader::new(data.as_slice()).is_err());
+}
+
+#[test]
+fn test_opaque_arrays_bytes_2_too_long() {
+    #[rustfmt::skip]
+    let data: Vec<u8> = vec![
+        0xF, 0xF, 0xF, 0x0, // bytes
+        0x0, 0x0, 0x0, 0x4, // bytes_2_count
+        0x1, 0xF, 0xF, 0xF, // bytes_2
+        0x0, 0x0, 0x0, 0x4, // bytes_3_count
+        0x1, 0x1, 0x0, 0x0  // bytes_3
+    ];
+    assert!(OpaqueArraysReader::new(data.as_slice()).is_err());
+}
+
+#[test]
+fn test_opaque_arrays_missing_bytes_3_count() {
+    #[rustfmt::skip]
+    let data: Vec<u8> = vec![
+        0xF, 0xF, 0xF, 0x0, // bytes
+        0x0, 0x0, 0x0, 0x1, // bytes_2_count
+        0x1, 0xF, 0xF, 0xF, // bytes_2
+        0x0, 0x0,
+    ];
+    assert!(OpaqueArraysReader::new(data.as_slice()).is_err());
+}
+
+#[test]
+fn test_opaque_rrays_missing_bytes_3() {
+    #[rustfmt::skip]
+    let data: Vec<u8> = vec![
+        0xF, 0xF, 0xF, 0x0, // bytes
+        0x0, 0x0, 0x0, 0x1, // bytes_2_count
+        0x1, 0xF, 0xF, 0xF, // bytes_2
+        0x0, 0x0, 0x0, 0x5, // bytes_3_count
+        0x1, 0x1, 0x0, 0x0  // bytes_3
+    ];
+    assert!(OpaqueArraysReader::new(data.as_slice()).is_err());
 }
 
 #[test]
@@ -81,11 +148,12 @@ fn test_int_arrays_reader() {
     let reader = IntArraysReader::new(&data).unwrap();
 
     let mut fixed_iter = reader.get_fixed();
+    assert_eq!(reader.get_fixed().get_count(), 4);
     assert_eq!(fixed_iter.next().unwrap().unwrap().get_a(), 1);
     assert_eq!(fixed_iter.next().unwrap().unwrap().get_a(), 2);
     assert_eq!(fixed_iter.next().unwrap().unwrap().get_a(), 3);
     assert_eq!(fixed_iter.next().unwrap().unwrap().get_a(), 4);
-    assert!(fixed_iter.next().is_none());
+    assert_eq!(fixed_iter.next(), None);
 
     let mut limited_iter = reader.get_limited();
     assert_eq!(limited_iter.next().unwrap().unwrap().get_a(), 10);
@@ -99,6 +167,59 @@ fn test_int_arrays_reader() {
     assert_eq!(reader.get_limited_width(), Ok(12));
     assert_eq!(reader.get_unlimited_width(), Ok(8));
     assert_eq!(reader.get_width(), Ok(12 + 8 + 16));
+}
+
+#[test]
+fn test_int_arrays_empty() {
+    let data: Vec<u8> = Vec::new();
+    assert!(IntArraysReader::new(data.as_slice()).is_err());
+}
+
+#[test]
+fn test_int_arrays_fixed_array_missing_element() {
+    let data: Vec<u8> = vec![0xF, 0xE, 0xE];
+    assert!(IntArraysReader::new(data.as_slice()).is_err());
+}
+
+#[test]
+fn test_int_arrays_fixed_array_limited_missing_count() {
+    let data: Vec<u8> = vec![0xF, 0xE, 0xE, 0x0];
+    assert!(IntArraysReader::new(data.as_slice()).is_err());
+}
+
+#[test]
+fn test_int_arrays_fixed_array_limited_under_count() {
+    #[rustfmt::skip]
+    let data: Vec<u8> = vec![
+        0xF, 0xE, 0xE, 0x0, // fixed
+        0x0, 0x0, 0x0, 0x2, // limited_count
+        0x0, 0x0, 0x0, 0x1, // limited
+    ];
+    assert!(IntArraysReader::new(data.as_slice()).is_err());
+}
+
+#[test]
+fn test_int_arrays_fixed_array_missing_unlimited_count() {
+    let data: Vec<u8> = vec![
+        0xF, 0xE, 0xE, 0x2, // fixed
+        0x0, 0x0, 0x0, 0x2, // limited_count
+        0x0, 0x0, 0x0, 0x1, // limited
+        0x0, 0x0, 0x0, 0x1,
+    ];
+    assert!(IntArraysReader::new(data.as_slice()).is_err());
+}
+
+#[test]
+fn test_int_arrays_fixed_array_under_unlimited_count() {
+    #[rustfmt::skip]
+    let data: Vec<u8> = vec![
+        0xF, 0xE, 0xE, 0x2, // fixed
+        0x0, 0x0, 0x0, 0x2, // limited_count
+        0x0, 0x0, 0x0, 0x1, // limited
+        0x0, 0x0, 0x0, 0x1,
+        0x0, 0x0, 0x0, 0x2, // unlimited_count
+    ];
+    assert!(IntArraysReader::new(data.as_slice()).is_err());
 }
 
 #[test]
@@ -179,4 +300,56 @@ fn test_many_ints_reader() {
     assert_eq!(reader.get_second_width(), Ok(12));
     assert_eq!(reader.get_third_width(), Ok(12));
     assert_eq!(reader.get_width(), Ok(12 + 12 + 16));
+}
+
+#[test]
+fn test_unlimited_array_of_unlimited() {
+    let mut data: Vec<u8> = vec![];
+    let mut strings: Vec<xdr_lib::Result<OsString>> = vec![];
+    data.extend(100_u32.to_be_bytes());
+    for _ in 0..100 {
+        let my_string = Alphanumeric.sample_string(&mut rand::rng(), 2);
+
+        strings.push(Ok(OsString::from_str(&my_string).unwrap()));
+
+        data.extend(2_u32.to_be_bytes());
+        data.extend(my_string.as_bytes());
+        data.extend(&[0x0, 0x0]);
+    }
+
+    assert_eq!(data.len() % 4, 0);
+
+    let reader = UnlimitedArrayOfLimitedReader::new(data.as_slice()).unwrap();
+    assert_eq!(
+        reader
+            .get_a()
+            .map(|v| v.map(|res| res.get_data().to_os_string()))
+            .collect::<Vec<xdr_lib::Result<OsString>>>(),
+        strings
+    );
+}
+
+#[test]
+fn test_unlimited_array_of_unlimited_error_in_middle() {
+    let mut data: Vec<u8> = vec![];
+    let mut strings: Vec<xdr_lib::Result<OsString>> = vec![];
+    data.extend(100_u32.to_be_bytes());
+    for i in 0..100 {
+        let my_string = Alphanumeric.sample_string(&mut rand::rng(), 2);
+
+        strings.push(Ok(OsString::from_str(&my_string).unwrap()));
+
+        if i == 49 {
+            data.extend(5_u32.to_be_bytes());
+            strings.push(Err(DeserializeError));
+        } else {
+            data.extend(2_u32.to_be_bytes());
+        }
+        data.extend(my_string.as_bytes());
+        data.extend(&[0x0, 0x0]);
+    }
+
+    assert_eq!(data.len() % 4, 0);
+
+    assert!(UnlimitedArrayOfLimitedReader::new(data.as_slice()).is_err());
 }

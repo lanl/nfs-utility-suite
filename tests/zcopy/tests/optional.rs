@@ -6,7 +6,7 @@ use std::os::unix::ffi::OsStrExt;
 include!(concat!(env!("OUT_DIR"), "/optional.rs"));
 
 use crate::optional::*;
-use xdr_lib::Reader;
+use xdr_lib::{DeserializeError, Reader};
 
 #[test]
 fn test_optionals_nonrecursive() {
@@ -36,6 +36,18 @@ fn test_optionals_nonrecursive() {
 }
 
 #[test]
+fn test_optionals_nonrecursive_missing_discriminant() {
+    let data: Vec<u8> = vec![];
+    assert!(JustAnOptionReader::new(data.as_slice()).is_err());
+}
+
+#[test]
+fn test_optionals_nonrecursive_missing_data() {
+    let data: Vec<u8> = vec![0x0, 0x0, 0x0, 0x1];
+    assert!(JustAnOptionReader::new(data.as_slice()).is_err());
+}
+
+#[test]
 fn test_optionals_recursive() {
     let mut data: Vec<u8> = vec![];
     let mut integers: Vec<i32> = vec![];
@@ -56,6 +68,39 @@ fn test_optionals_recursive() {
 
     assert_eq!(integers, actual_ints);
     assert_eq!(reader.get_width(), Ok(8 * 100 + 4));
+}
+
+#[test]
+fn test_optionals_recursive_missing_first_discriminant() {
+    let data: Vec<u8> = vec![];
+    let reader = ListBeginReader::new(data.as_slice()).unwrap();
+    assert_eq!(
+        reader
+            .get_list()
+            .collect::<Vec<Result<ListNodeReader, DeserializeError>>>(),
+        vec![Err(xdr_lib::DeserializeError)]
+    );
+}
+
+#[test]
+fn test_optionals_recursive_missing_last_discriminant() {
+    let mut data: Vec<u8> = vec![];
+    let mut integers: Vec<xdr_lib::Result<i32>> = vec![];
+
+    for i in 0i32..100 {
+        data.extend([0x0, 0x0, 0x0, 0x1]);
+        data.extend(i.to_be_bytes());
+        integers.push(Ok(i));
+    }
+    integers.push(Err(DeserializeError));
+
+    let reader = ListBeginReader::new(&data.as_slice()[..data.len()]).unwrap();
+    let actual_integers: Vec<xdr_lib::Result<i32>> = reader
+        .get_list()
+        .map(|v| v.map(|reader| reader.get_data()))
+        .collect();
+
+    assert_eq!(actual_integers, integers);
 }
 
 struct Groupnode {
@@ -123,4 +168,115 @@ fn test_optionals_recursive_varlen_interiors() {
             assert_eq!(first_string, second_string);
         }
     }
+}
+
+#[test]
+fn test_enum_chain() {
+    let mut enums = vec![];
+    let mut data: Vec<u8> = vec![];
+
+    for i in 0..100 {
+        data.extend(1u32.to_be_bytes());
+        if i % 2 == 0 {
+            enums.push(MyEnum::ZERO);
+            data.extend(0u32.to_be_bytes());
+        } else {
+            enums.push(MyEnum::ONE);
+            data.extend(1u32.to_be_bytes());
+        }
+    }
+
+    data.extend(0u32.to_be_bytes());
+
+    let reader = EnumChainStartReader::new(data.as_slice()).unwrap();
+    let actual_enums = reader
+        .get_first()
+        .map(|v| v.unwrap().get_a())
+        .collect::<Vec<_>>();
+
+    assert_eq!(actual_enums, enums);
+}
+
+#[test]
+fn test_enum_chain_middle_error() {
+    let mut enums = vec![];
+    let mut data: Vec<u8> = vec![];
+
+    for i in 0..100 {
+        data.extend(1u32.to_be_bytes());
+        if i == 49 {
+            enums.push(Err(DeserializeError));
+            data.extend(2u32.to_be_bytes());
+        } else if i % 2 == 0 {
+            enums.push(Ok(MyEnum::ZERO));
+            data.extend(0u32.to_be_bytes());
+        } else {
+            enums.push(Ok(MyEnum::ONE));
+            data.extend(1u32.to_be_bytes());
+        }
+    }
+
+    data.extend(0u32.to_be_bytes());
+
+    let reader = EnumChainStartReader::new(data.as_slice()).unwrap();
+    let actual_enums = reader
+        .get_first()
+        .map(|v| v.map(|res| res.get_a()))
+        .collect::<Vec<_>>();
+
+    assert_eq!(actual_enums, enums[0..50]);
+}
+
+#[test]
+fn test_enum_chain_end_missing_data() {
+    let mut enums = vec![];
+    let mut data: Vec<u8> = vec![];
+
+    for i in 0..100 {
+        data.extend(1u32.to_be_bytes());
+        if i % 2 == 0 {
+            enums.push(Ok(MyEnum::ZERO));
+            data.extend(0u32.to_be_bytes());
+        } else {
+            enums.push(Ok(MyEnum::ONE));
+            data.extend(1u32.to_be_bytes());
+        }
+    }
+
+    data.extend(1u32.to_be_bytes());
+    enums.push(Err(DeserializeError));
+
+    let reader = EnumChainStartReader::new(data.as_slice()).unwrap();
+    let actual_enums = reader
+        .get_first()
+        .map(|v| v.map(|res| res.get_a()))
+        .collect::<Vec<_>>();
+
+    assert_eq!(actual_enums, enums);
+}
+
+#[test]
+fn test_enum_chain_end_missing_discriminant() {
+    let mut enums = vec![];
+    let mut data: Vec<u8> = vec![];
+
+    for i in 0..100 {
+        data.extend(1u32.to_be_bytes());
+        if i % 2 == 0 {
+            enums.push(Ok(MyEnum::ZERO));
+            data.extend(0u32.to_be_bytes());
+        } else {
+            enums.push(Ok(MyEnum::ONE));
+            data.extend(1u32.to_be_bytes());
+        }
+    }
+    enums.push(Err(DeserializeError));
+
+    let reader = EnumChainStartReader::new(data.as_slice()).unwrap();
+    let actual_enums = reader
+        .get_first()
+        .map(|v| v.map(|res| res.get_a()))
+        .collect::<Vec<_>>();
+
+    assert_eq!(actual_enums, enums);
 }

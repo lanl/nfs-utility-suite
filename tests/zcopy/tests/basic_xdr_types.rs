@@ -52,8 +52,17 @@ fn test_hello_invalid_enum() {
         0xDE, 0xAD, 0xBE, 0xAF, // should be ignored
     ];
 
-    assert_eq!(
-        HelloReader::new(data.as_slice()),
-        Err(xdr_lib::DeserializeError)
-    );
+    assert!(HelloReader::new(data.as_slice()).is_err());
+}
+
+#[test]
+fn test_hello_one_byte_short() {
+    #[rustfmt::skip]
+    let data: Vec<u8> = vec![
+        0xC0, 0xFF, 0xEE, 0x11, // unsigned int abc
+        0x00, 0xBA, 0xB1, 0x0C, // int def
+        0x80, 0x00, 0x00, // favorite_fruit = invalid
+    ];
+
+    assert!(HelloReader::new(data.as_slice()).is_err());
 }

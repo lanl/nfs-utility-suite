@@ -128,6 +128,7 @@ pub struct ArrayIter<'a, T> {
     pub i: usize,
 
     pub _marker: PhantomData<T>,
+    err: bool,
 }
 
 #[derive(Default)]
@@ -141,6 +142,7 @@ pub struct LinkedListIter<'a, T> {
     pub i: usize,
 
     pub _marker: PhantomData<T>,
+    err: bool,
 }
 
 macro_rules! impl_reader_for_numeric {
@@ -204,15 +206,12 @@ impl<'a, T> LinkedListIter<'a, T> {
             off: 0,
             i: 0,
             _marker: PhantomData,
+            err: false,
         }
     }
 
     pub fn get_index(&self) -> usize {
         self.i
-    }
-
-    pub fn get_current_ofset(&self) -> usize {
-        self.off
     }
 }
 
@@ -223,8 +222,13 @@ where
     type Item = Result<T>;
 
     fn next(&mut self) -> Option<Result<T>> {
-        if self.buf.len() < 4 + self.off {
+        if self.err {
             return None;
+        }
+
+        if self.buf.len() < 4 + self.off {
+            self.err = true;
+            return Some(Err(DeserializeError));
         }
 
         let has_val = get_i32_infallible(&self.buf[self.off..]);
@@ -236,7 +240,11 @@ where
         }
 
         let ret = if let Some(item_width) = self.item_width {
-            T::from_buf(&self.buf[self.off..self.off + item_width])
+            T::from_buf(
+                self.buf
+                    .get(self.off..self.off + item_width)
+                    .unwrap_or(&self.buf[self.off..]),
+            )
         } else {
             T::from_buf(&self.buf[self.off..])
         };
@@ -247,6 +255,7 @@ where
 
             Some(Ok(ret))
         } else {
+            self.err = true;
             Some(Err(DeserializeError))
         }
     }
@@ -261,6 +270,7 @@ impl<'a, T> ArrayIter<'a, T> {
             off: 0,
             i: 0,
             _marker: PhantomData,
+            err: false,
         }
     }
 
@@ -268,8 +278,8 @@ impl<'a, T> ArrayIter<'a, T> {
         self.i
     }
 
-    pub fn get_current_ofset(&self) -> usize {
-        self.off
+    pub fn get_count(&self) -> usize {
+        self.count
     }
 }
 
@@ -280,8 +290,17 @@ where
     type Item = Result<T>;
 
     fn next(&mut self) -> Option<Result<T>> {
-        if self.off >= self.buf.len() || self.i >= self.count {
+        if self.err {
             return None;
+        }
+
+        if self.i == self.count {
+            return None;
+        }
+
+        if self.off >= self.buf.len() || self.i >= self.count {
+            self.err = true;
+            return Some(Err(DeserializeError));
         }
 
         let ret = if let Some(item_width) = self.item_width {
@@ -296,6 +315,7 @@ where
 
             Some(Ok(ret))
         } else {
+            self.err = true;
             Some(Err(DeserializeError))
         }
     }

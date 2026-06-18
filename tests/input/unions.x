@@ -87,3 +87,24 @@ struct HasUnion {
     NumLeaves c;
     Plant nocache;
 };
+
+union Bar switch (Cases blah) {
+case one:
+        int a;
+case two:
+        void;
+};
+
+union AnOption switch (bool yes) {
+case TRUE:
+    int a;
+case FALSE:
+    void;
+};
+
+union Foo switch(Cases blah) {
+case one:
+        int *a;
+case two:
+        void;
+};

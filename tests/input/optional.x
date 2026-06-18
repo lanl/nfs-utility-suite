@@ -42,3 +42,17 @@ struct exportnode {
    groups   ex_groups;
    exportnode *ex_next;
 };
+
+enum MyEnum {
+    ZERO = 0,
+    ONE = 1
+};
+
+struct EnumNode {
+    MyEnum a;
+    EnumNode *next;
+};
+
+struct EnumChainStart {
+    EnumNode* first;
+};

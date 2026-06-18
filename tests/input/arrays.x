@@ -61,3 +61,11 @@ struct LimitedOpaqueArrays {
 struct UnlimitedOpaqueArray {
 	opaque data<>;
 };
+
+struct LimitedOpaqueArray {
+    string data<4>;
+};
+
+struct UnlimitedArrayOfLimited {
+    LimitedOpaqueArray a<>;
+};
