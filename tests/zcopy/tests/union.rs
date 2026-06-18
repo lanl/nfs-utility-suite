@@ -3,7 +3,7 @@ use std::{ffi::OsStr, os::unix::ffi::OsStrExt};
 include!(concat!(env!("OUT_DIR"), "/unions.rs"));
 
 use crate::unions::*;
-use xdr_lib::{DeserializeError, Reader};
+use xdr_lib::Reader;
 
 fn to_be_bytes_i32(val: i32) -> [u8; 4] {
     val.to_be_bytes()
@@ -29,10 +29,7 @@ fn test_plant_kind_deserialize() {
         PlantKind::deserialize(&to_be_bytes_i32(2)),
         Ok(PlantKind::Flower)
     );
-    assert_eq!(
-        PlantKind::deserialize(&to_be_bytes_i32(3)),
-        Err(DeserializeError)
-    );
+    assert!(PlantKind::deserialize(&to_be_bytes_i32(3)).is_err());
 }
 
 #[test]
@@ -44,10 +41,23 @@ fn test_plant_reader() {
 
     assert_eq!(reader.deserialize(), PlantRet::Tree(15));
     assert_eq!(reader.get_width().unwrap(), 8);
+}
 
-    // let buf = to_be_bytes_i32(99);
-    // let reader = PlantReader::new(&buf).unwrap();
-    // assert_eq!(reader.deserialize(), Err(DeserializeError));
+#[test]
+fn test_plant_reader_empty() {
+    assert!(PlantReader::new(&[]).is_err());
+}
+
+#[test]
+fn test_plant_reader_invalid_enum() {
+    let buf: &[u8] = &[0x0, 0x0, 0x0, 0x3];
+    assert!(PlantReader::new(buf).is_err());
+}
+
+#[test]
+fn test_plant_reader_no_data() {
+    let buf: &[u8] = &[0x0, 0x0, 0x0, 0x2];
+    assert!(PlantReader::new(buf).is_err());
 }
 
 #[test]
@@ -63,6 +73,17 @@ fn test_num_leaves_reader() {
     let reader = NumLeavesReader::new(&buf).unwrap();
     assert_eq!(reader.deserialize(), Some(100));
     assert_eq!(reader.get_width().unwrap(), 8);
+}
+
+#[test]
+fn test_num_leaves_empty() {
+    assert!(NumLeavesReader::new(&[]).is_err());
+}
+
+#[test]
+fn test_num_leaves_no_data() {
+    let buf: &[u8] = &[0x0, 0x0, 0x0, 0x1];
+    assert!(NumLeavesReader::new(buf).is_err());
 }
 
 #[test]
@@ -195,4 +216,59 @@ fn test_stuff_or_plant2_reader() {
         StuffOrPlant2Ret::Default(Cases::three)
     );
     assert_eq!(reader.get_width().unwrap(), 8);
+}
+
+#[test]
+fn test_stuff_or_plant2_default_nodata() {
+    let mut buf = Vec::new();
+    buf.extend_from_slice(&to_be_bytes_i32(99));
+    assert!(StuffOrPlant2Reader::new(&buf).is_err());
+}
+
+#[test]
+fn test_bar_reader() {
+    let mut buf = Vec::new();
+    buf.extend_from_slice(&to_be_bytes_i32(1));
+    buf.extend_from_slice(&to_be_bytes_i32(42));
+
+    let reader = BarReader::new(&buf).unwrap();
+    assert!(matches!(reader.deserialize(), BarRet::one(42)));
+    assert_eq!(reader.get_width().unwrap(), 8);
+
+    // Case two: enum discriminant 2 (Cases::two) + void (0 additional bytes)
+    let buf = to_be_bytes_i32(2);
+    let reader = BarReader::new(&buf).unwrap();
+    assert!(matches!(reader.deserialize(), BarRet::two));
+    assert_eq!(reader.get_width().unwrap(), 4);
+}
+
+#[test]
+fn test_an_option_reader() {
+    let buf = to_be_bytes_i32(0);
+    let reader = AnOptionReader::new(&buf).unwrap();
+    assert_eq!(reader.deserialize(), None);
+    assert_eq!(reader.get_width().unwrap(), 4);
+
+    let mut buf = Vec::new();
+    buf.extend_from_slice(&to_be_bytes_i32(1));
+    buf.extend_from_slice(&to_be_bytes_i32(100));
+
+    let reader = AnOptionReader::new(&buf).unwrap();
+    assert_eq!(reader.deserialize(), Some(100));
+    assert_eq!(reader.get_width().unwrap(), 8);
+}
+
+#[test]
+fn test_foo_reader() {
+    let mut buf = Vec::new();
+    buf.extend_from_slice(&to_be_bytes_i32(1));
+    buf.extend_from_slice(&to_be_bytes_i32(1));
+    buf.extend_from_slice(&to_be_bytes_i32(99));
+
+    let reader = FooReader::new(&buf).unwrap();
+    assert_eq!(reader.get_width().unwrap(), 12);
+
+    let buf = to_be_bytes_i32(2);
+    let reader = FooReader::new(&buf).unwrap();
+    assert_eq!(reader.get_width().unwrap(), 4);
 }

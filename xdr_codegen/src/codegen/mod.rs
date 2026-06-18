@@ -316,6 +316,21 @@ impl Array {
     ) -> String {
         let name = varname.get_or_insert("length");
 
+        let limited_check = match &self.size {
+            ArraySize::Limited(value) => {
+                if !emit_lencheck {
+                    "".to_string()
+                } else {
+                    let len = value.as_const(tab);
+                    format!(
+                        "if {name} > {} {{ return Err(xdr_lib::DeserializeError); }}\n",
+                        len
+                    )
+                }
+            }
+            _ => "".to_string(),
+        };
+
         match &self.size {
             ArraySize::Fixed(value) => format!(
                 "let {}: usize = {}; let _array_count_size: usize = 0;",
@@ -324,13 +339,14 @@ impl Array {
             ),
             _ => {
                 format!(
-                    "{}let {}: usize = xdr_lib::get_u32_infallible(_input) as usize;\nlet _array_count_size: usize = 4;{}",
+                    "{}let {}: usize = xdr_lib::get_u32_infallible(_input) as usize;\n{}let _array_count_size: usize = 4;{}",
                     if emit_lencheck {
-                        "if _input.len() < 4 { return Err(xdr_lib::DeserializeError); }\n"
+                        "if _input.len() < 4 {{ return Err(xdr_lib::DeserializeError); }}\n"
                     } else {
                         ""
                     },
                     name,
+                    limited_check,
                     if advance_input_off {
                         "\n#[allow(unused_variables)]\nlet off = off + _array_count_size;\nlet _input = &_input[_array_count_size..];"
                     } else {

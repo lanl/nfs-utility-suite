@@ -258,8 +258,9 @@ impl XdrType {
                 buf.add_line("0 => None,");
                 buf.code_block("_ =>", |buf| {
                     buf.block_statement("let val = ", |buf| {
+                        buf.add_line("#[allow(unused_variables)]");
                         buf.add_line("let off = off + 4;");
-                        buf.add_line("let _input = &self.buf[off..];");
+                        buf.add_line("let _input = &_input[4..];");
                         self.deserialize_inline_zcopy(buf, tab, fallible_parent);
                     });
                     buf.add_line("Some(val)");
@@ -341,7 +342,7 @@ impl ValidatedStruct {
                                 "let off = {};",
                                 Self::offset_to_string_localvars(off)
                             ));
-                            buf.add_line("let _input = &buf[off..];");
+                            buf.add_line("let _input = &buf.get(off..).ok_or(xdr_lib::DeserializeError)?;");
                             if nd.is_varlen_reader(tab) {
                                     let typename = nd.as_zcopy_dser_type_name(tab);
                                     let typename = typename.strip_suffix("<'a>").map(|rest| format!("{}::<'a>", rest)).unwrap_or(typename.to_string());
@@ -600,7 +601,7 @@ impl Array {
     }
 
     pub(super) fn get_size_inline_zcopy(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
-        buf.add_line(&self.array_count_extractor(Some("length"), tab, false, true));
+        buf.add_line(&self.array_count_extractor(Some("length"), tab, true, true));
 
         if let Some(elem_width) = self.elem_size(tab) {
             buf.add_line(&format!(
@@ -768,8 +769,10 @@ impl ValidatedUnionBoolBody {
             buf.add_line("0 => None,");
             buf.code_block("_ =>", |buf| {
                 buf.block_statement("let val = ", |buf| {
-                    let size = self.true_arm.size(tab);
+                    buf.add_line("let off = off + 4;");
+                    buf.add_line("let _input = &buf[off..];");
 
+                    let size = self.true_arm.size(tab);
                     if let Some(size) = size {
                         buf.add_line(&format!(
                             "if _input.len() < {} {{ return Err(xdr_lib::DeserializeError) }}",
@@ -777,8 +780,6 @@ impl ValidatedUnionBoolBody {
                         ));
                     }
 
-                    buf.add_line("let off = off + 4;");
-                    buf.add_line("let _input = &buf[off..];");
                     self.true_arm.deserialize_inline_zcopy(buf, tab, true)
                 });
                 buf.add_line("Some(val)");
