@@ -719,7 +719,9 @@ impl ValidatedUnion {
                         ValidatedUnionBody::Bool(b) => {
                             b.get_size_inline_bool_zcopy(buf, tab, true, None)
                         }
-                        ValidatedUnionBody::Enum(e) => e.get_size_inline_enum_zcopy(buf, tab),
+                        ValidatedUnionBody::Enum(e) => {
+                            e.get_size_inline_enum_zcopy(&self.name, buf, tab);
+                        }
                     };
                 });
             },
@@ -826,7 +828,7 @@ impl ValidatedUnionEnumBody {
         for arm in self.arms.iter() {
             let name = ValidatedUnionEnumBody::arm_name(&arm.0);
             match &arm.1 {
-                Declaration::Void => buf.add_line(&format!("{name},")),
+                Declaration::Void => arms_translated.push(format!("{name},")),
                 Declaration::Named(n) => {
                     let inner_type = n.as_zcopy_dser_type_name(tab);
                     arms_translated.push(format!("{name}({inner_type}),"));
@@ -920,6 +922,15 @@ impl ValidatedUnionEnumBody {
                             buf.add_line("let off = off + 4;");
                             buf.add_line("let _input = &buf[off..];");
 
+                            let size = n.size(tab);
+
+                            if let Some(size) = size{
+                                buf.add_line(&format!(
+                                    "if _input.len() < {} {{ return Err(xdr_lib::DeserializeError) }}",
+                                    size,
+                                ));
+                            }
+
                             buf.block_statement("let inner =", |buf| {
                                 n.deserialize_inline_zcopy(buf, tab, true);
                             });
@@ -928,33 +939,37 @@ impl ValidatedUnionEnumBody {
                     }
                 };
             } else {
-                buf.add_line("_ => unreachable!(),");
+                buf.add_line("_ => return Err(xdr_lib::DeserializeError),");
             }
         });
     }
 
-    pub(super) fn get_size_inline_enum_zcopy(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
-        buf.code_block("if _input.len() < 4", |buf| {
-            buf.add_line("return Err(xdr_lib::DeserializeError)");
-        });
-        buf.add_line("let discriminant = xdr_lib::get_i32_infallible(_input);");
-        buf.code_block("Ok(4usize + match discriminant", |buf| {
+    pub(super) fn get_size_inline_enum_zcopy(
+        &self,
+        u_name: &str,
+        buf: &mut CodeBuf,
+        tab: &ValidatedSymbolTable,
+    ) {
+        buf.code_block("Ok(4usize + match &self.inner", |buf| {
             for arm in self.arms.iter() {
-                let discriminant_value = self.get_discriminant_value(&arm.0, tab);
-                buf.code_block(&format!("{discriminant_value} => "), |buf| {
-                    match &arm.1 {
-                        Declaration::Void => {
+                // let discriminant_value = self.get_discriminant_value(&arm.0, tab);
+                let arm_name = ValidatedUnionEnumBody::arm_name(&arm.0);
+                match &arm.1 {
+                    Declaration::Void => {
+                        buf.code_block(&format!("{}Ret::{} => ", u_name, arm_name), |buf| {
                             buf.add_line("Ok(0)");
-                        }
-                        Declaration::Named(n) => {
+                        });
+                    }
+                    Declaration::Named(n) => {
+                        buf.code_block(&format!("{}Ret::{}(_val) => ", u_name, arm_name), |buf| {
                             if let Some(width) = n.size(tab) {
                                 buf.add_line(&format!("Ok({})", width));
                             } else {
-                                buf.add_line("self.inner.get_width()")
+                                buf.add_line("_val.get_width()")
                             }
-                        }
-                    };
-                });
+                        });
+                    }
+                };
             }
             if let Some(default_arm) = &self.default_arm {
                 match default_arm {
@@ -962,17 +977,15 @@ impl ValidatedUnionEnumBody {
                         buf.add_line("_ => Ok(0),");
                     }
                     Declaration::Named(n) => {
-                        buf.code_block("_ =>", |buf| {
+                        buf.code_block(&format!("{}Ret::Default(_val) =>", u_name), |buf| {
                             if let Some(width) = n.size(tab) {
                                 buf.add_line(&format!("Ok({})", width));
                             } else {
-                                buf.add_line("self.inner.get_width()")
+                                buf.add_line("&_val.get_width()")
                             }
                         });
                     }
                 };
-            } else {
-                buf.add_line("_ => return Err(xdr_lib::DeserializeError),");
             }
         });
         buf.add_line("?)");
