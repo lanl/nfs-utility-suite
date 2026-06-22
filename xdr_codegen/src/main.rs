@@ -17,10 +17,13 @@ struct Args {
 pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     let mut compiler = xdr_codegen::Compiler::new();
+
+    if args.zero_copy {
+        compiler.enable_zcopy();
+    }
+
     if args.no_alloc {
         compiler.enable_no_alloc().disable_alloc().run()
-    } else if args.zero_copy {
-        compiler.disable_alloc().enable_zcopy().run()
     } else {
         compiler.run()
     }
