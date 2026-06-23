@@ -51,7 +51,12 @@ fn getattr(call: &Call, _state: &mut ServerState) -> RingResult {
 
     let result = GetAttrResult::Ok(GetAttrSuccess { obj_attributes });
 
-    RingResult::Done(RpcResult::Success(result.serialize_alloc()))
+    let width = result.get_width();
+    let mut buf = vec![0u8; width];
+    let written = result.serialize(buf.as_mut_slice());
+    assert_eq!(written, width);
+
+    RingResult::Done(RpcResult::Success(buf))
 }
 
 #[cfg(not(target_os = "linux"))]

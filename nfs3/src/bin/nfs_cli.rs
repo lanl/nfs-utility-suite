@@ -47,15 +47,44 @@ fn do_getattr(stream: &mut TcpStream, fh: u64) -> io::Result<()> {
         },
     };
 
-    let arg = arg.serialize_alloc();
+    let width = arg.get_width();
+    let mut buf = vec![0u8; width];
+    let written = arg.serialize(buf.as_mut_slice());
+    assert_eq!(written, width);
 
-    let res = do_rpc_call(stream, NFS_PROGRAM, NFS_V3::VERSION, NFS_V3::GETATTR, &arg);
+    let res = do_rpc_call(
+        stream,
+        NFS_PROGRAM,
+        NFS_V3::VERSION,
+        NFS_V3::GETATTR,
+        buf.as_slice(),
+    );
 
     match res {
         Ok(bytes) => {
-            let mut res = GetAttrResult::default();
-            res.deserialize(&mut bytes.as_slice()).unwrap();
-            eprintln!("Success: {res:?}");
+            let reader = GetAttrResultReader::new(bytes.as_slice()).unwrap();
+
+            match reader.deserialize() {
+                GetAttrResultRet::Ok(reader) => {
+                    let reader = reader.get_obj_attributes();
+                    eprintln!(
+                        "Success: {:?}",
+                        FileAttributes {
+                            _type: reader.get__type(),
+                            mode: reader.get_mode(),
+                            nlink: reader.get_nlink(),
+                            uid: reader.get_uid(),
+                            gid: reader.get_gid(),
+                            size: reader.get_size(),
+                            used: reader.get_used(),
+                            fsid: reader.get_fsid(),
+                            fileid: reader.get_fileid(),
+                            ..Default::default()
+                        }
+                    );
+                }
+                GetAttrResultRet::Default => eprintln!("Error: getattr failed"),
+            }
         }
         Err(e) => {
             eprintln!("{e:?}");
