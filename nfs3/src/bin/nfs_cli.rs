@@ -6,7 +6,12 @@ use std::{io, net::TcpStream};
 use clap::{Parser, Subcommand};
 
 use ::nfs3::{nfs3_xdr::procedures::*, nfs3_xdr::*};
+use nfs3::mount_proto::{
+    procedures::{MOUNT_PROGRAM, MOUNT_V3},
+    MountProc3Args, MountResultReader, MountResultRet,
+};
 use rpc_protocol::client::*;
+use std::ffi::OsString;
 
 #[derive(Debug, Parser)]
 struct Cli {
@@ -23,9 +28,9 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Command {
     /// Perform a getattr RPC.
-    Getattr {
+    Mount {
         #[arg(short, long)]
-        filehandle: u64,
+        filename: String,
     },
 }
 
@@ -36,15 +41,13 @@ fn main() -> io::Result<()> {
     let mut stream = TcpStream::connect(format!("{}:{}", args.hostname, args.port))?;
 
     match args.command {
-        Command::Getattr { filehandle } => do_getattr(&mut stream, filehandle),
+        Command::Mount { filename } => do_mount(&mut stream, filename),
     }
 }
 
-fn do_getattr(stream: &mut TcpStream, fh: u64) -> io::Result<()> {
-    let arg = GetAttrArgs {
-        object: FileHandle {
-            data: Vec::from(fh.to_be_bytes()),
-        },
+fn do_mount(stream: &mut TcpStream, filename: String) -> io::Result<()> {
+    let arg = MountProc3Args {
+        dirpath: OsString::from(filename),
     };
 
     let width = arg.get_width();
@@ -54,36 +57,26 @@ fn do_getattr(stream: &mut TcpStream, fh: u64) -> io::Result<()> {
 
     let res = do_rpc_call(
         stream,
-        NFS_PROGRAM,
-        NFS_V3::VERSION,
-        NFS_V3::GETATTR,
+        MOUNT_PROGRAM,
+        MOUNT_V3::VERSION,
+        MOUNT_V3::MOUNTPROC3_MNT,
         buf.as_slice(),
     );
 
     match res {
         Ok(bytes) => {
-            let reader = GetAttrResultReader::new(bytes.as_slice()).unwrap();
+            let reader = MountResultReader::new(bytes.as_slice()).unwrap();
 
             match reader.deserialize() {
-                GetAttrResultRet::Ok(reader) => {
-                    let reader = reader.get_obj_attributes();
+                nfs3::mount_proto::MountResultRet::Ok(reader) => {
+                    let data = reader.get_fhandle();
+                    let (int_bytes, _) = data.split_at(8);
                     eprintln!(
                         "Success: {:?}",
-                        FileAttributes {
-                            _type: reader.get__type(),
-                            mode: reader.get_mode(),
-                            nlink: reader.get_nlink(),
-                            uid: reader.get_uid(),
-                            gid: reader.get_gid(),
-                            size: reader.get_size(),
-                            used: reader.get_used(),
-                            fsid: reader.get_fsid(),
-                            fileid: reader.get_fileid(),
-                            ..Default::default()
-                        }
+                        u64::from_be_bytes(int_bytes.try_into().unwrap())
                     );
                 }
-                GetAttrResultRet::Default => eprintln!("Error: getattr failed"),
+                MountResultRet::Default => eprintln!("Error: mount failed"),
             }
         }
         Err(e) => {

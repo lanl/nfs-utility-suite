@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright 2025. Triad National Security, LLC.
 
+use std::ffi::CString;
 use std::fmt;
 use std::io;
 use std::net::TcpListener;
 use std::os::fd::AsRawFd;
 use std::sync::atomic::{AtomicU16, Ordering};
 
+use io_uring::squeue;
 use io_uring::{cqueue, opcode, types, IoUring};
 use log::*;
 
@@ -16,7 +18,7 @@ const GROUP_ID: u16 = 42;
 
 /// The io_uring implementation has a custom procedure type that returns a RingResult rather than
 /// the RpcResult.
-pub type RingProcedure<T> = fn(&Call, &mut T) -> RingResult;
+pub type RingProcedure<T> = fn(&Call, &mut T, i32, u32) -> RingResult;
 pub type RingProcedureList<T> = Vec<Option<RingProcedure<T>>>;
 
 pub enum RingResult {
@@ -27,7 +29,7 @@ pub enum RingResult {
     /// ...or it may need to do I/O, which will use this thread's io_uring instance. The RpcServer
     /// will submit the Entry on behalf of the procedure implemenation, and call a user-supplied
     /// callback (TODO: implement this...) when the completion comes in.
-    _MoreIo(cqueue::Entry),
+    _MoreIo(squeue::Entry),
 }
 
 /// A mapping between RPC procedures (identified by program, version, and procedure numbers), and
@@ -110,7 +112,7 @@ impl<T> RpcServer<T> {
 
             check_completion_error(&cqe, &op);
 
-            trace!("{op}: {cqe:?}");
+            eprintln!("{op}: {cqe:?}");
 
             match *op {
                 Operation::Accept(ref a) => {
@@ -123,6 +125,9 @@ impl<T> RpcServer<T> {
                 }
                 Operation::Send(s) => {
                     eprintln!("send completion (not yet handling): {s:?}, {cqe:?}");
+                }
+                Operation::MountStatx(s) => {
+                    self.process_user_result((s.cb)(s.data, s.path, s.connfd), s.xid, s.connfd);
                 }
             }
         }
@@ -212,7 +217,7 @@ impl<T> RpcServer<T> {
             todo!("handle this");
         };
 
-        let res = procedure(&call, &mut self.user_state);
+        let res = procedure(&call, &mut self.user_state, conn_fd, call.get_xid());
 
         self.process_user_result(res, call.get_xid(), conn_fd);
     }
@@ -223,7 +228,9 @@ impl<T> RpcServer<T> {
                 RpcResult::Success(data) => self.send_succesful_reply(xid, conn_fd, data),
                 _ => todo!(),
             },
-            RingResult::_MoreIo(_) => todo!(),
+            RingResult::_MoreIo(e) => unsafe {
+                self.ring.submission().push(&e).expect("submission error")
+            },
         }
     }
 
@@ -279,11 +286,16 @@ fn submit_accept(ring: &mut IoUring, listen_fd: types::Fd, user_data: u64) {
     }
 }
 
+pub struct ConInfo {
+    fd: i32,
+}
+
 #[derive(Debug)]
-enum Operation {
+pub enum Operation {
     Accept(Accept),
     Recv(Receive),
     Send(Send),
+    MountStatx(Statx),
 }
 
 impl fmt::Display for Operation {
@@ -292,6 +304,7 @@ impl fmt::Display for Operation {
             Self::Accept(a) => write!(f, "Accept on FD {}", a.fd),
             Self::Recv(r) => write!(f, "Receive on FD {}", r.fd),
             Self::Send(_) => write!(f, "Send"),
+            Self::MountStatx(s) => write!(f, "Mount statx operation"),
         }
     }
 }
@@ -377,7 +390,7 @@ impl Operation {
     ///
     /// Exposes provenance so that a pointer to the Operation can be acquired with the proper
     /// provenance when processing the completion that holds this data.
-    fn to_u64(self: Box<Self>) -> u64 {
+    pub fn to_u64(self: Box<Self>) -> u64 {
         Box::into_raw(self).expose_provenance() as u64
     }
 
@@ -462,6 +475,16 @@ struct BufferMap {
     group_id: u16,
 
     buffers: Vec<Box<[u8]>>,
+}
+
+pub type StatxCB = fn(libc::statx, CString, i32) -> RingResult;
+#[derive(Debug)]
+pub struct Statx {
+    pub data: libc::statx,
+    pub path: CString,
+    pub connfd: i32,
+    pub xid: u32,
+    pub cb: StatxCB,
 }
 
 impl BufferMap {

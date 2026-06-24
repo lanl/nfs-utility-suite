@@ -60,6 +60,10 @@ struct Exports {
     ExportNode *inner;
 };
 
+struct MountProc3Args {
+    DirPath dirpath;
+};
+
 program MOUNT_PROGRAM {
    version MOUNT_V3 {
         void      MOUNTPROC3_NULL(void)    = 0;
