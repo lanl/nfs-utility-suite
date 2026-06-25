@@ -184,8 +184,8 @@ impl<'src> Scanner<'src> {
     /// If the input is a keyword in rust, like `type`, or `where`, then escape it.
     fn maybe_escape(s: &str) -> String {
         match s {
-            "where" => "r#where".to_string(),
-            "type" => "r#type".to_string(),
+            "where" => "_where".to_string(),
+            "type" => "_type".to_string(),
             _ => s.to_string(),
         }
     }

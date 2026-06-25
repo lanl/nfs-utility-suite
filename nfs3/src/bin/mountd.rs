@@ -63,7 +63,13 @@ fn main() {
 }
 
 fn export(_call: &Call, state: &mut MountState) -> RpcResult {
-    RpcResult::Success(state.exports.serialize_alloc())
+    let width = state.exports.get_width();
+    let mut buf: Vec<u8> = vec![0; width];
+
+    let written = state.exports.serialize(buf.as_mut_slice());
+    assert_eq!(written, width);
+
+    RpcResult::Success(buf)
 }
 
 /// Tell the RPCBIND server that the mount service is now running:

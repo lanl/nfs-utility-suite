@@ -33,20 +33,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &[0u8; 0],
     )?;
 
-    let mut export_list = Exports::default();
-    export_list.deserialize(&mut res.as_slice())?;
+    let exports = ExportsReader::new(res.as_slice())?;
 
-    print_exports(&args.hostname, export_list);
+    print_exports(&args.hostname, exports.get_inner());
 
     Ok(())
 }
 
-fn print_exports(hostname: &str, list: Exports) {
+fn print_exports<'a>(
+    hostname: &str,
+    list: impl Iterator<Item = xdr_lib::Result<ExportNodeReader<'a>>>,
+) {
     println!("Export list for {hostname}:");
-    for export in list.inner {
-        print!("{} ", export.dir.display());
-        for group in export.groups.inner {
-            print!("{} ", group.name.display());
+    for export in list {
+        let export = export.expect("Failed to deserialize node reader");
+        print!("{} ", export.get_dir().display());
+        for group in export.get_groups().get_inner() {
+            print!("{} ", group.unwrap().get_name().display());
         }
         println!();
     }

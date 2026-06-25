@@ -4,8 +4,17 @@
 #[cfg(target_os = "linux")]
 use {
     clap::Parser,
-    nfs3::nfs3_xdr::{procedures::*, *},
+    io_uring::{opcode, types},
+    nfs3::{
+        mount_proto::{
+            procedures::{MOUNT_PROGRAM, MOUNT_V3},
+            MountProc3ArgsReader, MountResult, MountResultOk,
+        },
+        nfs3_xdr::{procedures::*, *},
+    },
+    nix::errno::{self, Errno},
     rpc_protocol::{server::RpcResult, Call},
+    std::{collections::HashMap, ffi::CString, os::unix::ffi::OsStrExt},
 };
 
 #[cfg(target_os = "linux")]
@@ -22,7 +31,9 @@ struct Cli {
 }
 
 #[cfg(target_os = "linux")]
-struct ServerState {}
+struct ServerState {
+    fh_map: HashMap<Box<u8>, String>,
+}
 
 #[cfg(target_os = "linux")]
 fn main() {
@@ -31,19 +42,27 @@ fn main() {
     let args = Cli::parse();
     let address = format!("127.0.0.1:{}", args.port);
 
-    let state = ServerState {};
+    let state = ServerState {
+        fh_map: HashMap::new(),
+    };
 
-    let procedures: Vec<Option<RingProcedure<ServerState>>> = vec![None, Some(getattr)];
-    let procedure_map =
-        ProcedureMap::new(NFS_PROGRAM, NFS_V3::VERSION, NFS_V3::VERSION, procedures);
+    let procedures: Vec<Option<RingProcedure<ServerState>>> = vec![None, Some(mount)];
+    let procedure_map = ProcedureMap::new(
+        MOUNT_PROGRAM,
+        MOUNT_V3::VERSION,
+        MOUNT_V3::VERSION,
+        procedures,
+    );
 
-    let mut server = RpcServer::new(&address, procedure_map, state).unwrap();
+    let program_map = ProgramMap::new([procedure_map].into_iter());
+
+    let mut server = RpcServer::new(&address, program_map, state).unwrap();
 
     server.main_loop().unwrap();
 }
 
 #[cfg(target_os = "linux")]
-fn getattr(call: &Call, _state: &mut ServerState) -> RingResult {
+fn getattr(call: &Call, _state: &mut ServerState, _connfd: i32) -> RingResult {
     let arg = call.arg;
     eprintln!("in getattr impl: {arg:?}");
 
@@ -51,7 +70,84 @@ fn getattr(call: &Call, _state: &mut ServerState) -> RingResult {
 
     let result = GetAttrResult::Ok(GetAttrSuccess { obj_attributes });
 
-    RingResult::Done(RpcResult::Success(result.serialize_alloc()))
+    let width = result.get_width();
+    let mut buf = vec![0u8; width];
+    let written = result.serialize(buf.as_mut_slice());
+    assert_eq!(written, width);
+
+    RingResult::Done(RpcResult::Success(buf))
+}
+
+#[cfg(target_os = "linux")]
+fn mount(call: &Call, _state: &mut ServerState, connfd: i32, xid: u32) -> RingResult {
+    let arg = call.arg;
+    let Ok(mount_params) = MountProc3ArgsReader::new(arg) else {
+        todo!("handle errors");
+    };
+
+    let path_cstring =
+        CString::new(mount_params.get_dirpath().as_bytes()).expect("invalid mount string");
+
+    let mut user_data = Box::new(Operation::MountStatx(Statx {
+        data: unsafe { std::mem::zeroed() },
+        path: path_cstring,
+        connfd,
+        xid,
+        cb: mount_response,
+    }));
+
+    let op = match &mut *user_data {
+        Operation::MountStatx(s) => opcode::Statx::new(
+            types::Fd(libc::AT_FDCWD),
+            s.path.as_ptr(),
+            &mut s.data as *mut libc::statx as *mut _,
+        ),
+        _ => unreachable!(),
+    };
+
+    let op = op.build().user_data(user_data.to_u64());
+
+    RingResult::_MoreIo(op)
+}
+
+#[cfg(target_os = "linux")]
+fn mount_response(res: libc::statx, errno: i32) -> RingResult {
+    let errno = if errno >= 0 && (res.stx_mode as u32 & libc::S_IFMT) != libc::S_IFDIR {
+        -(Errno::ENOTDIR as i32)
+    } else {
+        errno
+    };
+
+    if errno >= 0 {
+        let res = MountResult::Ok(MountResultOk {
+            fhandle: res.stx_ino.to_be_bytes().to_vec(),
+            auth_flavors: vec![],
+        });
+
+        let mut data = vec![0u8; res.get_width()];
+        res.serialize(data.as_mut_slice());
+
+        RingResult::Done(RpcResult::Success(data))
+    } else {
+        let code = nix::errno::Errno::from_raw(errno.abs());
+
+        let res = match code {
+            Errno::EPERM => MountResult::Perm,
+            Errno::ENOENT => MountResult::NoEnt,
+            Errno::EIO => MountResult::Io,
+            Errno::ENOTDIR => MountResult::NotDir,
+            Errno::EACCES => MountResult::Access,
+            Errno::EINVAL => MountResult::Inval,
+            Errno::ENAMETOOLONG => MountResult::NameTooLong,
+            Errno::ENOTSUP => MountResult::NotSupp,
+            _ => MountResult::ServerFault,
+        };
+
+        let mut data = vec![0u8; res.get_width()];
+        res.serialize(data.as_mut_slice());
+
+        RingResult::Done(RpcResult::Success(data))
+    }
 }
 
 #[cfg(not(target_os = "linux"))]

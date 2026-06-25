@@ -6,7 +6,12 @@ use std::{io, net::TcpStream};
 use clap::{Parser, Subcommand};
 
 use ::nfs3::{nfs3_xdr::procedures::*, nfs3_xdr::*};
+use nfs3::mount_proto::{
+    procedures::{MOUNT_PROGRAM, MOUNT_V3},
+    MountProc3Args, MountResultReader, MountResultRet,
+};
 use rpc_protocol::client::*;
+use std::ffi::OsString;
 
 #[derive(Debug, Parser)]
 struct Cli {
@@ -23,9 +28,9 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Command {
     /// Perform a getattr RPC.
-    Getattr {
+    Mount {
         #[arg(short, long)]
-        filehandle: u64,
+        filename: String,
     },
 }
 
@@ -36,26 +41,56 @@ fn main() -> io::Result<()> {
     let mut stream = TcpStream::connect(format!("{}:{}", args.hostname, args.port))?;
 
     match args.command {
-        Command::Getattr { filehandle } => do_getattr(&mut stream, filehandle),
+        Command::Mount { filename } => do_mount(&mut stream, filename),
     }
 }
 
-fn do_getattr(stream: &mut TcpStream, fh: u64) -> io::Result<()> {
-    let arg = GetAttrArgs {
-        object: FileHandle {
-            data: Vec::from(fh.to_be_bytes()),
-        },
+fn do_mount(stream: &mut TcpStream, filename: String) -> io::Result<()> {
+    let arg = MountProc3Args {
+        dirpath: OsString::from(filename),
     };
 
-    let arg = arg.serialize_alloc();
+    let width = arg.get_width();
+    let mut buf = vec![0u8; width];
+    let written = arg.serialize(buf.as_mut_slice());
+    assert_eq!(written, width);
 
-    let res = do_rpc_call(stream, NFS_PROGRAM, NFS_V3::VERSION, NFS_V3::GETATTR, &arg);
+    let res = do_rpc_call(
+        stream,
+        MOUNT_PROGRAM,
+        MOUNT_V3::VERSION,
+        MOUNT_V3::MOUNTPROC3_MNT,
+        buf.as_slice(),
+    );
 
     match res {
         Ok(bytes) => {
-            let mut res = GetAttrResult::default();
-            res.deserialize(&mut bytes.as_slice()).unwrap();
-            eprintln!("Success: {res:?}");
+            let reader = MountResultReader::new(bytes.as_slice()).unwrap();
+
+            match reader.deserialize() {
+                nfs3::mount_proto::MountResultRet::Ok(reader) => {
+                    let data = reader.get_fhandle();
+                    let (int_bytes, _) = data.split_at(8);
+                    eprintln!(
+                        "Success: {:?}",
+                        u64::from_be_bytes(int_bytes.try_into().unwrap())
+                    );
+                }
+                MountResultRet::Io => eprintln!("mount error: MountResultRet::Io"),
+                MountResultRet::Access => eprintln!("mount error: MountResultRet::Access"),
+                MountResultRet::ServerFault => {
+                    eprintln!("mount error: MountResultRet::ServerFault")
+                }
+                MountResultRet::NameTooLong => {
+                    eprintln!("mount error: MountResultRet::NameTooLong")
+                }
+                MountResultRet::NotSupp => eprintln!("mount error: MountResultRet::NotSupp"),
+                MountResultRet::NotDir => eprintln!("mount error: MountResultRet::NotDir"),
+                MountResultRet::Perm => eprintln!("mount error: MountResultRet::Perm"),
+                MountResultRet::NoEnt => eprintln!("mount error: MountResultRet::NoEnt"),
+                MountResultRet::Inval => eprintln!("mount error: MountResultRet::Inval"),
+                MountResultRet::Default => eprintln!("mount error: MountResultRet::Default"),
+            }
         }
         Err(e) => {
             eprintln!("{e:?}");
