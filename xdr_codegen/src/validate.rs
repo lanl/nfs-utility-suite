@@ -304,9 +304,7 @@ impl XdrUnionBoolBody {
 }
 
 impl XdrUnionEnumBody {
-    fn validate(self, u_name: String, tab: &ValidatedSymbolTable) -> ValidatedDefinition {
-        let mut arms_iter = self.arms.iter();
-
+    fn validate(mut self, u_name: String, tab: &ValidatedSymbolTable) -> ValidatedDefinition {
         let Some(discriminant_name) = &self.discriminant else {
             todo!("we do not currently support void discriminant unions")
         };
@@ -350,15 +348,13 @@ impl XdrUnionEnumBody {
             }
         }
 
-        // if all the enum cases are covered by the match arms, we can elide the
-        // default case
-        let default_arm = if !left.is_empty() {
-            self.default_arm.as_ref()
-        } else {
-            None
-        };
+        if let Some(default_arm) = self.default_arm.as_ref() {
+            self.arms
+                .extend(left.drain().map(|s| (Value::Name(s), default_arm.clone())));
+        }
 
-        let size = if let Some(default_arm) = default_arm {
+        let mut arms_iter = self.arms.iter();
+        let size = if let Some(default_arm) = self.default_arm.as_ref() {
             let default_size = default_arm.size(tab);
             if default_size.is_none() || arms_iter.all(|(_, d)| d.size(tab) == default_size) {
                 default_size
