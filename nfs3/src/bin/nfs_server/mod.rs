@@ -12,6 +12,7 @@ use {
         },
         nfs3_xdr::{procedures::*, *},
     },
+    nix::errno::{self, Errno},
     rpc_protocol::{server::RpcResult, Call},
     std::{collections::HashMap, ffi::CString, os::unix::ffi::OsStrExt},
 };
@@ -108,16 +109,43 @@ fn mount(call: &Call, _state: &mut ServerState, connfd: i32, xid: u32) -> RingRe
 }
 
 #[cfg(target_os = "linux")]
-fn mount_response(res: libc::statx, path: CString, _connfd: i32) -> RingResult {
-    let res = MountResult::Ok(MountResultOk {
-        fhandle: res.stx_ino.to_be_bytes().to_vec(),
-        auth_flavors: vec![],
-    });
+fn mount_response(res: libc::statx, errno: i32) -> RingResult {
+    let errno = if errno >= 0 && (res.stx_mode as u32 & libc::S_IFMT) != libc::S_IFDIR {
+        -(Errno::ENOTDIR as i32)
+    } else {
+        errno
+    };
 
-    let mut data = vec![0u8; res.get_width()];
-    res.serialize(data.as_mut_slice());
+    if errno >= 0 {
+        let res = MountResult::Ok(MountResultOk {
+            fhandle: res.stx_ino.to_be_bytes().to_vec(),
+            auth_flavors: vec![],
+        });
 
-    RingResult::Done(RpcResult::Success(data))
+        let mut data = vec![0u8; res.get_width()];
+        res.serialize(data.as_mut_slice());
+
+        RingResult::Done(RpcResult::Success(data))
+    } else {
+        let code = nix::errno::Errno::from_raw(errno.abs());
+
+        let res = match code {
+            Errno::EPERM => MountResult::Perm,
+            Errno::ENOENT => MountResult::NoEnt,
+            Errno::EIO => MountResult::Io,
+            Errno::ENOTDIR => MountResult::NotDir,
+            Errno::EACCES => MountResult::Access,
+            Errno::EINVAL => MountResult::Inval,
+            Errno::ENAMETOOLONG => MountResult::NameTooLong,
+            Errno::ENOTSUP => MountResult::NotSupp,
+            _ => MountResult::ServerFault,
+        };
+
+        let mut data = vec![0u8; res.get_width()];
+        res.serialize(data.as_mut_slice());
+
+        RingResult::Done(RpcResult::Success(data))
+    }
 }
 
 #[cfg(not(target_os = "linux"))]

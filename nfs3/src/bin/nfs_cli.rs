@@ -76,7 +76,20 @@ fn do_mount(stream: &mut TcpStream, filename: String) -> io::Result<()> {
                         u64::from_be_bytes(int_bytes.try_into().unwrap())
                     );
                 }
-                MountResultRet::Default => eprintln!("Error: mount failed"),
+                MountResultRet::Io => eprintln!("mount error: MountResultRet::Io"),
+                MountResultRet::Access => eprintln!("mount error: MountResultRet::Access"),
+                MountResultRet::ServerFault => {
+                    eprintln!("mount error: MountResultRet::ServerFault")
+                }
+                MountResultRet::NameTooLong => {
+                    eprintln!("mount error: MountResultRet::NameTooLong")
+                }
+                MountResultRet::NotSupp => eprintln!("mount error: MountResultRet::NotSupp"),
+                MountResultRet::NotDir => eprintln!("mount error: MountResultRet::NotDir"),
+                MountResultRet::Perm => eprintln!("mount error: MountResultRet::Perm"),
+                MountResultRet::NoEnt => eprintln!("mount error: MountResultRet::NoEnt"),
+                MountResultRet::Inval => eprintln!("mount error: MountResultRet::Inval"),
+                MountResultRet::Default => eprintln!("mount error: MountResultRet::Default"),
             }
         }
         Err(e) => {

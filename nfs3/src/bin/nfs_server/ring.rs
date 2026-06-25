@@ -127,7 +127,7 @@ impl<T> RpcServer<T> {
                     eprintln!("send completion (not yet handling): {s:?}, {cqe:?}");
                 }
                 Operation::MountStatx(s) => {
-                    self.process_user_result((s.cb)(s.data, s.path, s.connfd), s.xid, s.connfd);
+                    self.process_user_result((s.cb)(s.data, cqe.result()), s.xid, s.connfd);
                 }
             }
         }
@@ -477,7 +477,7 @@ struct BufferMap {
     buffers: Vec<Box<[u8]>>,
 }
 
-pub type StatxCB = fn(libc::statx, CString, i32) -> RingResult;
+pub type StatxCB = fn(libc::statx, i32) -> RingResult;
 #[derive(Debug)]
 pub struct Statx {
     pub data: libc::statx,
