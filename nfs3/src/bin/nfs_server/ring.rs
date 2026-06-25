@@ -68,11 +68,57 @@ impl<T> ProcedureMap<T> {
     }
 }
 
+pub struct ProgramMap<T> {
+    programs: Vec<ProcedureMap<T>>,
+}
+
+impl<T> ProgramMap<T> {
+    pub fn new(iter: impl Iterator<Item = ProcedureMap<T>>) -> Self {
+        Self {
+            programs: Vec::from_iter(iter),
+        }
+    }
+
+    pub fn validate_program_and_version(&self, call: &Call) -> Result<&ProcedureMap<T>, Error> {
+        // This implementation currently only supports auth styles "None" and "Sys":
+        let credential = call.get_credential();
+
+        match credential.flavor {
+            AuthFlavor::None => {}
+            AuthFlavor::Sys => {}
+            _ => {
+                debug!("CALL with unsupported auth: {:?}", credential);
+                let reply = ReplyBody::Denied(RejectedReply::AuthError(AuthStat::RejectedCred));
+                return Err(Error::Rpc(reply));
+            }
+        };
+
+        let call_prog = call.get_program();
+        let Some(program) = self.programs.iter().find(|v| v.program == call_prog) else {
+            debug!("CALL for unknown program {}", call_prog);
+            let reply = ReplyBody::accepted_reply(AcceptedReplyBody::ProgUnavail);
+            return Err(Error::Rpc(reply));
+        };
+
+        let version = call.get_version();
+        if version < program.version_min || version > program.version_max {
+            debug!("CALL for unknown version {}", version);
+            let reply =
+                ReplyBody::accepted_reply(AcceptedReplyBody::ProgMismatch(ProgMismatchBody {
+                    low: program.version_min,
+                    high: program.version_max,
+                }));
+            return Err(Error::Rpc(reply));
+        }
+        Ok(program)
+    }
+}
+
 pub struct RpcServer<T> {
     ring: IoUring,
     listener: TcpListener,
     buffer_map: BufferMap,
-    procedure_map: ProcedureMap<T>,
+    program_map: ProgramMap<T>,
 
     /// The RPC service implementation uses this field to store state that must be maintained
     /// across RPC calls.
@@ -80,7 +126,7 @@ pub struct RpcServer<T> {
 }
 
 impl<T> RpcServer<T> {
-    pub fn new(address: &str, procedure_map: ProcedureMap<T>, user_state: T) -> io::Result<Self> {
+    pub fn new(address: &str, program_map: ProgramMap<T>, user_state: T) -> io::Result<Self> {
         let mut ring = IoUring::new(1024)?;
         let buffer_map = BufferMap::new(&mut ring);
 
@@ -88,7 +134,7 @@ impl<T> RpcServer<T> {
             ring,
             listener: TcpListener::bind(address)?,
             buffer_map,
-            procedure_map,
+            program_map,
             user_state,
         };
 
@@ -195,10 +241,7 @@ impl<T> RpcServer<T> {
 
         eprintln!("{call:?}");
 
-        let map = &self.procedure_map;
-        let Ok(()) =
-            validate_program_and_version(&call, map.program, map.version_min, map.version_max)
-        else {
+        let Ok(map) = self.program_map.validate_program_and_version(&call) else {
             todo!("Handle this");
         };
 

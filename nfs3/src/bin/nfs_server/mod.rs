@@ -54,7 +54,9 @@ fn main() {
         procedures,
     );
 
-    let mut server = RpcServer::new(&address, procedure_map, state).unwrap();
+    let program_map = ProgramMap::new([procedure_map].into_iter());
+
+    let mut server = RpcServer::new(&address, program_map, state).unwrap();
 
     server.main_loop().unwrap();
 }
