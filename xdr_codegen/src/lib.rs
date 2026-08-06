@@ -2,7 +2,7 @@
 // Copyright 2025. Triad National Security, LLC.
 
 mod ast;
-mod codegen;
+pub mod codegen;
 mod ir;
 mod parser;
 mod scanner;
@@ -18,6 +18,8 @@ use std::{
 
 use parser::Parser;
 use scanner::{Scanner, Token};
+
+use crate::codegen::ser_layout::SerLayout;
 
 type Result<T> = std::result::Result<T, XdrError>;
 
@@ -112,6 +114,11 @@ impl Compiler {
 
     pub fn enable_zcopy(&mut self) -> &mut Self {
         self.params.zcopy = true;
+        self
+    }
+  
+    pub fn add_ser_layout(&mut self, layout: SerLayout) -> &mut Self {
+        self.params.ser_layouts.push(layout);
         self
     }
 

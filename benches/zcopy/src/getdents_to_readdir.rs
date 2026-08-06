@@ -82,7 +82,7 @@ fn generate_getdents64_buffer(num_entries: usize, avg_name_len: usize) -> Vec<u8
 /// This simulates what an NFS server would do: receive getdents64 output and
 /// convert it to XDR entry3 structures for transmission. Uses d_reclen to
 /// iterate through the tightly-packed buffer.
-#[inline(always)]
+#[inline(never)]
 fn getdents64_to_xdr_readdir(buffer: &[u8]) -> Vec<optional::Entry> {
     let mut entries = Vec::new();
     let mut offset = 0;
@@ -151,6 +151,7 @@ fn bench_small_readdir(c: &mut Criterion) {
     });
 }
 
+#[inline(never)]
 fn bench_medium_readdir(c: &mut Criterion) {
     c.bench_function("getdents64_to_xdr_medium_256_entries", |b| {
         b.iter_batched(

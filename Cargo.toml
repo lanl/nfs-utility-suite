@@ -9,5 +9,20 @@ members = [
     "tests/zcopy",
     "xdr_codegen",
     "xdr_lib",
-    "benches/zcopy"
+    "benches/zcopy",
+    "benches/serialize",
 ]
+
+[profile.bench]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+debug = false
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+debug = false

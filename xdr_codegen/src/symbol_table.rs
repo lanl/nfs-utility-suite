@@ -18,7 +18,7 @@ pub struct ValidatedSymbolTable {
 }
 
 impl ValidatedSymbolTable {
-    pub fn new_empty() -> ValidatedSymbolTable {
+    pub(crate) fn new_empty() -> ValidatedSymbolTable {
         ValidatedSymbolTable {
             tab: HashMap::<String, ValidatedDefinition>::new(),
             size_tab: SizeTab::new(),
@@ -26,7 +26,10 @@ impl ValidatedSymbolTable {
     }
 
     /// Tries to resolve a name to its underlying type.
-    pub fn lookup_definition_fallible(&self, name: &str) -> Result<&ValidatedDefinition, XdrError> {
+    pub(crate) fn lookup_definition_fallible(
+        &self,
+        name: &str,
+    ) -> Result<&ValidatedDefinition, XdrError> {
         match self.tab.get(name) {
             Some(ent) => Ok(ent),
             None => Err(XdrError::UndefinedName(name.to_string())),

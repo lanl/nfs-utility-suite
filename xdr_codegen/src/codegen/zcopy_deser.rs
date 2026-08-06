@@ -341,7 +341,7 @@ impl XdrType {
             XdrType::Bool => ("xdr_lib::get_bool_infallible".to_string(), false),
             XdrType::Name(n) => {
                 if let ValidatedDefinition::Enum(_) = tab.lookup_definition(n) {
-                    (format!("{n}::deserialize"), true)
+                    (format!("{n}::deserialize_zcopy"), true)
                 } else {
                     (format!("{n}Reader::from_buf"), true)
                 }
@@ -655,7 +655,7 @@ impl ValidatedEnum {
         tab: &ValidatedSymbolTable,
     ) {
         buf.code_block(
-            "pub fn deserialize(_input: &[u8]) -> xdr_lib::Result<Self>",
+            "pub fn deserialize_zcopy(_input: &[u8]) -> xdr_lib::Result<Self>",
             |buf| {
                 buf.add_line("let val = xdr_lib::get_i32_infallible(_input);");
                 buf.code_block("match val", |buf| {
@@ -749,7 +749,7 @@ impl ValidatedUnion {
         buf.code_block(&format!("impl<'a> {}Reader<'a>", self.name), |buf| {
             buf.code_block(
                 &format!(
-                    "pub fn deserialize(&'a self) -> {}",
+                    "pub fn deserialize_zcopy(&'a self) -> {}",
                     self.get_type_zcopy(tab)
                 ),
                 |buf| {

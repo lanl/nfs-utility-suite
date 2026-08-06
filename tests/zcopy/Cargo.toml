@@ -9,3 +9,5 @@ xdr_codegen = { path = "../../xdr_codegen" }
 [dependencies]
 xdr_lib = { path = "../../xdr_lib" }
 rand = "0.10.1"
+libc = "0.2.186"
+criterion = "0.8.2"

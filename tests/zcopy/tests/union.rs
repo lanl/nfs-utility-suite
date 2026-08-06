@@ -16,20 +16,20 @@ fn to_be_bytes_u64(val: u64) -> [u8; 8] {
 }
 
 #[test]
-fn test_plant_kind_deserialize() {
+fn test_plant_kind_deserialize_zcopy() {
     assert_eq!(
-        PlantKind::deserialize(&to_be_bytes_i32(0)),
+        PlantKind::deserialize_zcopy(&to_be_bytes_i32(0)),
         Ok(PlantKind::Tree)
     );
     assert_eq!(
-        PlantKind::deserialize(&to_be_bytes_i32(1)),
+        PlantKind::deserialize_zcopy(&to_be_bytes_i32(1)),
         Ok(PlantKind::Grass)
     );
     assert_eq!(
-        PlantKind::deserialize(&to_be_bytes_i32(2)),
+        PlantKind::deserialize_zcopy(&to_be_bytes_i32(2)),
         Ok(PlantKind::Flower)
     );
-    assert!(PlantKind::deserialize(&to_be_bytes_i32(3)).is_err());
+    assert!(PlantKind::deserialize_zcopy(&to_be_bytes_i32(3)).is_err());
 }
 
 #[test]
@@ -39,7 +39,7 @@ fn test_plant_reader() {
     buf.extend_from_slice(&to_be_bytes_i32(15));
     let reader = PlantReader::new(&buf).unwrap();
 
-    assert_eq!(reader.deserialize(), PlantRet::Tree(15));
+    assert_eq!(reader.deserialize_zcopy(), PlantRet::Tree(15));
     assert_eq!(reader.get_width().unwrap(), 8);
 }
 
@@ -64,14 +64,14 @@ fn test_plant_reader_no_data() {
 fn test_num_leaves_reader() {
     let buf = to_be_bytes_i32(0);
     let reader = NumLeavesReader::new(&buf).unwrap();
-    assert_eq!(reader.deserialize(), None);
+    assert_eq!(reader.deserialize_zcopy(), None);
     assert_eq!(reader.get_width().unwrap(), 4);
 
     let mut buf = Vec::new();
     buf.extend_from_slice(&to_be_bytes_i32(1));
     buf.extend_from_slice(&to_be_bytes_u32(100));
     let reader = NumLeavesReader::new(&buf).unwrap();
-    assert_eq!(reader.deserialize(), Some(100));
+    assert_eq!(reader.deserialize_zcopy(), Some(100));
     assert_eq!(reader.get_width().unwrap(), 8);
 }
 
@@ -90,14 +90,14 @@ fn test_num_leaves_no_data() {
 fn test_maybe_a_plant_kind_reader() {
     let buf = to_be_bytes_i32(0);
     let reader = MaybeAPlantKindReader::new(&buf).unwrap();
-    assert_eq!(reader.deserialize(), None);
+    assert_eq!(reader.deserialize_zcopy(), None);
     assert_eq!(reader.get_width().unwrap(), 4);
 
     let mut buf = Vec::new();
     buf.extend_from_slice(&to_be_bytes_i32(1));
     buf.extend_from_slice(&to_be_bytes_i32(1));
     let reader = MaybeAPlantKindReader::new(&buf).unwrap();
-    assert_eq!(reader.deserialize(), Some(PlantKind::Grass));
+    assert_eq!(reader.deserialize_zcopy(), Some(PlantKind::Grass));
     assert_eq!(reader.get_width().unwrap(), 8);
 }
 
@@ -117,7 +117,7 @@ fn test_stuff_reader() {
 fn test_maybe_stuff_reader() {
     let buf = to_be_bytes_i32(0);
     let reader = MaybeStuffReader::new(&buf).unwrap();
-    assert_eq!(reader.deserialize(), None);
+    assert_eq!(reader.deserialize_zcopy(), None);
     assert_eq!(reader.get_width().unwrap(), 4);
 
     let mut buf = Vec::new();
@@ -126,7 +126,7 @@ fn test_maybe_stuff_reader() {
     buf.extend_from_slice(&to_be_bytes_u64(20));
 
     let reader = MaybeStuffReader::new(&buf).unwrap();
-    let result = reader.deserialize().unwrap();
+    let result = reader.deserialize_zcopy().unwrap();
     assert_eq!(result.get_a(), 10);
     assert_eq!(result.get_b(), 20);
     assert_eq!(reader.get_width().unwrap(), 16);
@@ -136,7 +136,7 @@ fn test_maybe_stuff_reader() {
 fn test_has_string_reader() {
     let buf = to_be_bytes_i32(0);
     let reader = HasStringReader::new(&buf).unwrap();
-    assert_eq!(reader.deserialize(), None);
+    assert_eq!(reader.deserialize_zcopy(), None);
     assert_eq!(reader.get_width().unwrap(), 4);
 
     let mut buf = Vec::new();
@@ -145,15 +145,24 @@ fn test_has_string_reader() {
     buf.extend_from_slice(b"Rust");
 
     let reader = HasStringReader::new(&buf).unwrap();
-    assert_eq!(reader.deserialize(), Some(OsStr::from_bytes(b"Rust")));
+    assert_eq!(reader.deserialize_zcopy(), Some(OsStr::from_bytes(b"Rust")));
     assert_eq!(reader.get_width().unwrap(), 12);
 }
 
 #[test]
-fn test_cases_deserialize() {
-    assert_eq!(Cases::deserialize(&to_be_bytes_i32(1)), Ok(Cases::one));
-    assert_eq!(Cases::deserialize(&to_be_bytes_i32(2)), Ok(Cases::two));
-    assert_eq!(Cases::deserialize(&to_be_bytes_i32(3)), Ok(Cases::three));
+fn test_cases_deserialize_zcopy() {
+    assert_eq!(
+        Cases::deserialize_zcopy(&to_be_bytes_i32(1)),
+        Ok(Cases::one)
+    );
+    assert_eq!(
+        Cases::deserialize_zcopy(&to_be_bytes_i32(2)),
+        Ok(Cases::two)
+    );
+    assert_eq!(
+        Cases::deserialize_zcopy(&to_be_bytes_i32(3)),
+        Ok(Cases::three)
+    );
 }
 
 #[test]
@@ -163,7 +172,10 @@ fn test_stuff_or_plant_reader() {
     buf.extend_from_slice(&to_be_bytes_i32(50));
     buf.extend_from_slice(&to_be_bytes_u64(100));
     let reader = StuffOrPlantReader::new(&buf).unwrap();
-    assert!(matches!(reader.deserialize(), StuffOrPlantRet::one(_)));
+    assert!(matches!(
+        reader.deserialize_zcopy(),
+        StuffOrPlantRet::one(_)
+    ));
     assert_eq!(reader.get_width().unwrap(), 16);
 
     let mut buf = Vec::new();
@@ -171,7 +183,7 @@ fn test_stuff_or_plant_reader() {
     buf.extend_from_slice(&to_be_bytes_i32(2));
     let reader = StuffOrPlantReader::new(&buf).unwrap();
     assert_eq!(
-        reader.deserialize(),
+        reader.deserialize_zcopy(),
         StuffOrPlantRet::two(PlantKind::Flower)
     );
     assert_eq!(reader.get_width().unwrap(), 8);
@@ -181,7 +193,10 @@ fn test_stuff_or_plant_reader() {
     buf.extend_from_slice(&to_be_bytes_i32(1));
     buf.extend_from_slice(&to_be_bytes_i32(500));
     let reader = StuffOrPlantReader::new(&buf).unwrap();
-    assert!(matches!(reader.deserialize(), StuffOrPlantRet::three(_)));
+    assert!(matches!(
+        reader.deserialize_zcopy(),
+        StuffOrPlantRet::three(_)
+    ));
     assert_eq!(reader.get_width().unwrap(), 12);
 }
 
@@ -204,7 +219,10 @@ fn test_stuff_or_plant2_reader() {
     buf.extend_from_slice(&to_be_bytes_i32(200));
     buf.extend_from_slice(&to_be_bytes_i32(300));
     let reader = StuffOrPlant2Reader::new(&buf).unwrap();
-    assert!(matches!(reader.deserialize(), StuffOrPlant2Ret::two(_)));
+    assert!(matches!(
+        reader.deserialize_zcopy(),
+        StuffOrPlant2Ret::two(_)
+    ));
     assert_eq!(reader.get_width().unwrap(), 16);
 
     let mut buf = Vec::new();
@@ -212,7 +230,7 @@ fn test_stuff_or_plant2_reader() {
     buf.extend_from_slice(&to_be_bytes_i32(3));
     let reader = StuffOrPlant2Reader::new(&buf).unwrap();
     assert_eq!(
-        reader.deserialize(),
+        reader.deserialize_zcopy(),
         StuffOrPlant2Ret::Default(Cases::three)
     );
     assert_eq!(reader.get_width().unwrap(), 8);
@@ -232,13 +250,13 @@ fn test_bar_reader() {
     buf.extend_from_slice(&to_be_bytes_i32(42));
 
     let reader = BarReader::new(&buf).unwrap();
-    assert!(matches!(reader.deserialize(), BarRet::one(42)));
+    assert!(matches!(reader.deserialize_zcopy(), BarRet::one(42)));
     assert_eq!(reader.get_width().unwrap(), 8);
 
     // Case two: enum discriminant 2 (Cases::two) + void (0 additional bytes)
     let buf = to_be_bytes_i32(2);
     let reader = BarReader::new(&buf).unwrap();
-    assert!(matches!(reader.deserialize(), BarRet::two));
+    assert!(matches!(reader.deserialize_zcopy(), BarRet::two));
     assert_eq!(reader.get_width().unwrap(), 4);
 }
 
@@ -246,7 +264,7 @@ fn test_bar_reader() {
 fn test_an_option_reader() {
     let buf = to_be_bytes_i32(0);
     let reader = AnOptionReader::new(&buf).unwrap();
-    assert_eq!(reader.deserialize(), None);
+    assert_eq!(reader.deserialize_zcopy(), None);
     assert_eq!(reader.get_width().unwrap(), 4);
 
     let mut buf = Vec::new();
@@ -254,7 +272,7 @@ fn test_an_option_reader() {
     buf.extend_from_slice(&to_be_bytes_i32(100));
 
     let reader = AnOptionReader::new(&buf).unwrap();
-    assert_eq!(reader.deserialize(), Some(100));
+    assert_eq!(reader.deserialize_zcopy(), Some(100));
     assert_eq!(reader.get_width().unwrap(), 8);
 }
 

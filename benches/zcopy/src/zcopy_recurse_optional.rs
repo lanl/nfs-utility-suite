@@ -59,10 +59,23 @@ fn bench_exports_reader(_c: &mut Criterion) {
     // let data = setup_test_data();
 
     let mut c = Criterion::default()
-        .warm_up_time(std::time::Duration::new(5, 0)) // 2 seconds warm-up
-        .measurement_time(std::time::Duration::new(10, 0)); // 5 seconds measurement
+        .warm_up_time(std::time::Duration::new(10, 0)) // 2 seconds warm-up
+        .measurement_time(std::time::Duration::new(20, 0)); // 5 seconds measurement
 
-    c.bench_function("exports_reader_deserialization", move |b| {
+    let mut g = c.benchmark_group("exports_ll_bench");
+
+    g.bench_function("exports_reader_deserialization_old", move |b| {
+        b.iter_batched(
+            setup_test_data,
+            move |data| {
+                let mut en = exports::default();
+                let _ = std::hint::black_box(en.deserialize(&mut data.as_slice()));
+            },
+            criterion::BatchSize::LargeInput,
+        );
+    });
+
+    g.bench_function("exports_reader_deserialization_zcopy", move |b| {
         b.iter_batched(
             setup_test_data,
             move |data| {

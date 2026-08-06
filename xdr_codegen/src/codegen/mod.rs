@@ -7,6 +7,7 @@
 use std::collections::HashSet;
 
 use crate::ast::*;
+use crate::codegen::ser_layout::SerLayout;
 use crate::ir::*;
 use crate::symbol_table::ValidatedSymbolTable;
 use crate::validate::*;
@@ -14,6 +15,8 @@ use crate::validate::*;
 mod alloc;
 mod deserialize;
 mod no_alloc;
+pub mod ser_layout;
+mod vectorized_ser;
 mod zcopy_deser;
 
 /// Parameters for code generation.
@@ -26,6 +29,9 @@ pub struct Params {
 
     /// Whether to include zero-copy serdes routines
     pub zcopy: bool,
+
+    /// Vectorized serialization source layouts
+    pub ser_layouts: Vec<SerLayout>,
 
     /// Names to ommit derive(Debug) for
     pub omit_debug_for: Vec<String>,
@@ -40,8 +46,11 @@ impl Default for Params {
             no_alloc: false,
             alloc: true,
             zcopy: false,
+            ser_layouts: vec![],
+
             derive_serialize: false,
             omit_debug_for: Vec::new(),
+
         }
     }
 }
@@ -485,9 +494,7 @@ impl ValidatedUnion {
                 self.serialize_no_alloc(buf, tab);
             }
             buf.add_line("");
-            if !params.zcopy {
-                self.deserialize_definition(buf, tab);
-            }
+            self.deserialize_definition(buf, tab);
             buf.add_line("");
             self.width_getter(buf, tab);
         });
@@ -817,6 +824,10 @@ impl ValidatedStruct {
     fn codegen(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable, params: &Params) {
         self.default(buf, tab);
         buf.code_block(&format!("impl {}", self.name), |buf| {
+            if let Some(layout) = params.ser_layouts.iter().find(|v| v.maps_to == self.name) {
+                self.serialize_vectorized_definition(buf, layout, tab);
+            }
+
             if params.alloc {
                 self.serialize_definition(buf, tab);
             }
@@ -824,9 +835,7 @@ impl ValidatedStruct {
                 self.serialize_no_alloc(buf, tab);
             }
             buf.add_line("");
-            if !params.zcopy {
-                self.deserialize_definition(buf, tab);
-            }
+            self.deserialize_definition(buf, tab);
             buf.add_line("");
             self.width_getters(buf, tab);
         });
@@ -944,9 +953,9 @@ impl ValidatedEnum {
 
             if params.zcopy {
                 self.deserialize_definition_zcopy(buf, tab);
-            } else {
-                self.deserialize_definition(buf, tab);
             }
+
+            self.deserialize_definition(buf, tab);
         });
         buf.add_line("");
     }

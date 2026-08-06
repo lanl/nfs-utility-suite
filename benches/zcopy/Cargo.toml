@@ -1,5 +1,5 @@
 [package]
-name = "bench"
+name = "zcopy_bench"
 version = "0.1.0"
 edition = "2021"
 
@@ -10,7 +10,7 @@ criterion = "0.8"
 path = "src/zcopy_recurse_optional.rs"
 name = "zcopy_recurse_optional"
 harness = false
-debug = true
+debug = false
 
 [[bench]]
 path = "src/getdents_to_readdir.rs"

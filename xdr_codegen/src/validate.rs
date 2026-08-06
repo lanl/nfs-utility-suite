@@ -75,7 +75,7 @@ impl ValidatedSchema {
     /// succesful code generation.
     ///
     /// (For now, it only checks some errors, so finding errors during codegen is still possible.)
-    pub fn validate(mut schema: Schema) -> crate::Result<ValidatedSchema> {
+    pub(crate) fn validate(mut schema: Schema) -> crate::Result<ValidatedSchema> {
         let mut validated_symbol_table = ValidatedSymbolTable::new_empty();
         let mut definition_list = Vec::new();
         for definition in schema.definitions.drain(..) {

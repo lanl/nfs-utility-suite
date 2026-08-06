@@ -1,0 +1,20 @@
+[package]
+name = "serialize_bench"
+version = "0.1.0"
+edition = "2021"
+
+[dev-dependencies]
+criterion = "0.8"
+
+[[bench]]
+path = "src/structs.rs"
+name = "structs"
+harness = false
+
+[build-dependencies]
+xdr_codegen = { path = "../../xdr_codegen" }
+
+[dependencies]
+xdr_lib = { path = "../../xdr_lib" }
+rand = "0.10.1"
+libc = "0.2.189"
