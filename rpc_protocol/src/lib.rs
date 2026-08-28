@@ -144,7 +144,7 @@ pub fn decode_call(data: &[u8]) -> Result<Call<'_>, ProtocolError> {
 
     if let Err(e) = message.deserialize(&mut rest) {
         warn!("Error deserializing message: {e}");
-        todo!();
+        return Err(ProtocolError::Decode);
     }
 
     let RpcMessageBody::Call(call) = message.body else {

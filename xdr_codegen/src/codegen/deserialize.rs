@@ -37,6 +37,11 @@ impl Array {
                 });
             }
             _ => {
+                // `len` is read from the input, so it has to be checked against what is left of
+                // the input before splitting on it.
+                buf.add_line(
+                    "if input.len() < len as usize { return Err(xdr_lib::DeserializeError); }",
+                );
                 buf.add_line("let (bytes, rest) = input.split_at(len as usize);");
                 buf.add_line("*input = rest;");
                 match &self.size {
@@ -53,6 +58,9 @@ impl Array {
                     },
                 };
                 buf.add_line("let padding = (4 - len % 4) % 4;");
+                buf.add_line(
+                    "if input.len() < padding as usize { return Err(xdr_lib::DeserializeError); }",
+                );
                 buf.add_line("let (_, rest) = input.split_at(padding as usize);");
                 buf.add_line("*input = rest;");
             }
