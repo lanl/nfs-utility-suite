@@ -148,6 +148,29 @@ fn call_invalid_rpc_version() {
     assert_eq!(res.kind(), std::io::ErrorKind::UnexpectedEof);
 }
 
+#[test]
+fn decode_call_undefined_message_type() {
+    // xid 1, followed by a message type that is neither CALL nor REPLY.
+    let buf = vec![0, 0, 0, 1, 0, 0, 0, 99];
+
+    let res = decode_call(&buf);
+    assert!(matches!(res, Err(ProtocolError::Decode)), "got {res:?}");
+}
+
+#[test]
+fn decode_call_credential_longer_than_record() {
+    // A CALL whose credential length prefix claims 0xffffffff bytes, with no credential body
+    // behind it.
+    let buf = vec![
+        0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 2, 0, 1, 134, 160, 0, 0, 0, 4, 0, 0, 0, 4, 0, 0, 0, 0,
+        //                                                                    v here
+        255, 255, 255, 255,
+    ];
+
+    let res = decode_call(&buf);
+    assert!(matches!(res, Err(ProtocolError::Decode)), "got {res:?}");
+}
+
 /// Launches an RpcProgram with program number 7, version range 2-4, and one procedure defined (in
 /// addition to procedure 0 which is always defined.)
 ///
