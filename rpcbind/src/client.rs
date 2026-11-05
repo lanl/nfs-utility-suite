@@ -70,9 +70,9 @@ pub fn getaddr_using_stream<S: Read + Write>(
         OpaqueAuth::none(),
     )?;
 
-    let mut addr = rpcbind::RpcbString::default();
-    match addr.deserialize(&mut res.as_slice()) {
-        Ok(_) => Ok(addr.contents),
-        Err(_) => Err(Error::Protocol(ProtocolError::Decode)),
-    }
+    let Ok((addr, _)) = rpcbind::RpcbString::deserialize(res.as_slice()) else {
+        return Err(Error::Protocol(ProtocolError::Decode));
+    };
+
+    Ok(addr.contents)
 }

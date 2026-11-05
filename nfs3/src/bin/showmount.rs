@@ -51,8 +51,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         OpaqueAuth::none(),
     )?;
 
-    let mut export_list = Exports::default();
-    export_list.deserialize(&mut res.as_slice())?;
+    let (export_list, _) = Exports::deserialize(res.as_slice())?;
 
     print_exports(&args.hostname, &export_list);
 
@@ -71,9 +70,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             OpaqueAuth::none(),
         )?;
 
-        let mut mount_res = MountResult::default();
-
-        mount_res.deserialize(&mut res.as_slice())?;
+        let (mount_res, _) = MountResult::deserialize(res.as_slice())?;
 
         match &mount_res {
             MountResult::Ok(mount_result_ok) => {

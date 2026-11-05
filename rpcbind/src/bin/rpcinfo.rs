@@ -33,8 +33,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         OpaqueAuth::none(),
     )?;
 
-    let mut list = rpcbind::RpcbindList::default();
-    rpcbind::RpcbindList::deserialize(&mut list, &mut res.as_slice())?;
+    let (list, _) = rpcbind::RpcbindList::deserialize(res.as_slice())?;
 
     print_rpcblist(list);
 

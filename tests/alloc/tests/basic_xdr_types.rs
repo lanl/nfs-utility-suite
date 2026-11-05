@@ -13,8 +13,7 @@ fn opaque_arrays() {
         arr.bytes_3.push(i as u8);
     }
     let bytes = arr.serialize_alloc();
-    let mut after = OpaqueArrays::default();
-    OpaqueArrays::deserialize(&mut after, &mut bytes.as_slice()).unwrap();
+    let (after, _) = OpaqueArrays::deserialize(bytes.as_slice()).unwrap();
 
     assert_eq!(arr, after);
 }
@@ -36,8 +35,7 @@ fn arrays_of_struct() {
         });
     }
     let bytes = arr.serialize_alloc();
-    let mut after = IntArrays::default();
-    IntArrays::deserialize(&mut after, &mut bytes.as_slice()).unwrap();
+    let (after, _) = IntArrays::deserialize(bytes.as_slice()).unwrap();
 
     assert_eq!(arr, after);
 }
@@ -49,8 +47,7 @@ fn strings() {
         str_2: "world".into(),
     };
     let bytes = before.serialize_alloc();
-    let mut after = Strings::default();
-    Strings::deserialize(&mut after, &mut bytes.as_slice()).unwrap();
+    let (after, _) = Strings::deserialize(bytes.as_slice()).unwrap();
 
     assert_eq!(before, after);
 }
@@ -65,8 +62,7 @@ fn many_strings() {
         };
     }
     let bytes = before.serialize_alloc();
-    let mut after = ManyStrings::default();
-    ManyStrings::deserialize(&mut after, &mut bytes.as_slice()).unwrap();
+    let (after, _) = ManyStrings::deserialize(bytes.as_slice()).unwrap();
 
     assert_eq!(before, after);
 }
@@ -80,8 +76,7 @@ fn identifier_array() {
     }
     before.str = "hello".into();
     let bytes = before.serialize_alloc();
-    let mut after = IdentifierArray::default();
-    IdentifierArray::deserialize(&mut after, &mut bytes.as_slice()).unwrap();
+    let (after, _) = IdentifierArray::deserialize(bytes.as_slice()).unwrap();
 
     assert_eq!(before, after);
 }
@@ -96,8 +91,7 @@ fn many_ints() {
         before.third.push(i64::MAX - i as i64);
     }
     let bytes = before.serialize_alloc();
-    let mut after = ManyInts::default();
-    ManyInts::deserialize(&mut after, &mut bytes.as_slice()).unwrap();
+    let (after, _) = ManyInts::deserialize(bytes.as_slice()).unwrap();
 
     assert_eq!(before, after);
 }
@@ -113,8 +107,7 @@ fn test_hello() {
         favorite_fruit: hello::Fruit::StarFruit,
     };
     let bytes = before.serialize_alloc();
-    let mut after = hello::Hello::default();
-    after.deserialize(&mut bytes.as_slice()).unwrap();
+    let (after, _) = hello::Hello::deserialize(bytes.as_slice()).unwrap();
 
     assert_eq!(before, after);
 
@@ -133,8 +126,7 @@ fn optional() {
     }
 
     let bytes = head.serialize_alloc();
-    let mut after = ListBegin::default();
-    after.deserialize(&mut bytes.as_slice()).unwrap();
+    let (after, _) = ListBegin::deserialize(bytes.as_slice()).unwrap();
     assert_eq!(head, after);
 }
 
@@ -159,8 +151,7 @@ fn test_struct() {
 
     let bytes = before.serialize_alloc();
 
-    let mut after = structs::Foo::default();
-    after.deserialize(&mut bytes.as_slice()).unwrap();
+    let (after, _) = structs::Foo::deserialize(bytes.as_slice()).unwrap();
 
     assert_eq!(before, after);
 }
@@ -182,8 +173,7 @@ fn typedef() {
     };
 
     let bytes = before.serialize_alloc();
-    let mut after = File::default();
-    after.deserialize(&mut bytes.as_slice()).unwrap();
+    let (after, _) = File::deserialize(bytes.as_slice()).unwrap();
 
     assert_eq!(before, after);
 }
@@ -197,10 +187,7 @@ fn test_simple_union() {
 
     let plant_bytes = plant.serialize_alloc();
 
-    let mut plant_after = PlantKind::Tree;
-    plant_after
-        .deserialize(&mut plant_bytes.as_slice())
-        .unwrap();
+    let (plant_after, _) = PlantKind::deserialize(plant_bytes.as_slice()).unwrap();
 
     assert_eq!(plant, plant_after);
 }
@@ -215,15 +202,8 @@ fn test_bool_union_contains_int() {
     let not_a_plant_bytes = not_a_plant.serialize_alloc();
     let is_a_plant_bytes = is_a_plant.serialize_alloc();
 
-    let mut not_a_plant_after = NumLeaves { inner: Some(17) };
-    let mut is_a_plant_after = NumLeaves { inner: None };
-
-    not_a_plant_after
-        .deserialize(&mut not_a_plant_bytes.as_slice())
-        .unwrap();
-    is_a_plant_after
-        .deserialize(&mut is_a_plant_bytes.as_slice())
-        .unwrap();
+    let (not_a_plant_after, _) = NumLeaves::deserialize(not_a_plant_bytes.as_slice()).unwrap();
+    let (is_a_plant_after, _) = NumLeaves::deserialize(is_a_plant_bytes.as_slice()).unwrap();
 
     assert_eq!(not_a_plant.inner, not_a_plant_after.inner);
     assert_eq!(is_a_plant.inner, is_a_plant_after.inner);
@@ -239,17 +219,9 @@ fn test_bool_union_contains_enum() {
     let before_some_bytes = before_some.serialize_alloc();
     let before_none_bytes = before_none.serialize_alloc();
 
-    let mut after_some = MaybeAPlantKind { inner: None };
-    let mut after_none = MaybeAPlantKind {
-        inner: Some(PlantKind::Tree),
-    };
+    let (after_some, _) = MaybeAPlantKind::deserialize(before_some_bytes.as_slice()).unwrap();
 
-    after_some
-        .deserialize(&mut before_some_bytes.as_slice())
-        .unwrap();
-    after_none
-        .deserialize(&mut before_none_bytes.as_slice())
-        .unwrap();
+    let (after_none, _) = MaybeAPlantKind::deserialize(before_none_bytes.as_slice()).unwrap();
 
     assert_eq!(before_some, after_some);
     assert_eq!(before_none, after_none);
@@ -267,17 +239,9 @@ fn test_bool_union_contains_struct() {
     let before_some_bytes = before_some.serialize_alloc();
     let before_none_bytes = before_none.serialize_alloc();
 
-    let mut after_some = MaybeStuff { inner: None };
-    let mut after_none = MaybeStuff {
-        inner: Some(Stuff { a: 3, b: 4 }),
-    };
+    let (after_some, _) = MaybeStuff::deserialize(before_some_bytes.as_slice()).unwrap();
 
-    after_some
-        .deserialize(&mut before_some_bytes.as_slice())
-        .unwrap();
-    after_none
-        .deserialize(&mut before_none_bytes.as_slice())
-        .unwrap();
+    let (after_none, _) = MaybeStuff::deserialize(before_none_bytes.as_slice()).unwrap();
 
     assert_eq!(before_some.inner, after_some.inner);
     assert_eq!(before_none.inner, after_none.inner);
@@ -290,8 +254,7 @@ fn test_enum_union() {
     let plants_bytes = plants.iter().map(|plant| plant.serialize_alloc());
 
     let plants_after = plants_bytes.map(|bytes| {
-        let mut after = Plant::Tree(7);
-        after.deserialize(&mut bytes.as_slice()).unwrap();
+        let (after, _) = Plant::deserialize(bytes.as_slice()).unwrap();
         after
     });
 
@@ -310,8 +273,7 @@ fn test_enum_union_with_compound_arms() {
 
     let bytes = inputs.iter().map(|i| i.serialize_alloc());
     let outputs = bytes.map(|b| {
-        let mut after = StuffOrPlant::default();
-        after.deserialize(&mut b.as_slice()).unwrap();
+        let (after, _) = StuffOrPlant::deserialize(b.as_slice()).unwrap();
         after
     });
 
@@ -339,8 +301,6 @@ fn mount_proto_multiple_optionals() {
 
     let bytes = exports.serialize_alloc();
 
-    let mut after = exports::default();
-
-    after.deserialize(&mut bytes.as_slice()).unwrap();
+    let (after, _) = exports::deserialize(bytes.as_slice()).unwrap();
     assert_eq!(exports, after);
 }
