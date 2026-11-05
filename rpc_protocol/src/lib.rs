@@ -139,13 +139,13 @@ impl Call<'_> {
 /// caller must handle decoding the record mark and reading a cmplete record. Passing a record that
 /// is too short is returned as a decoding error.
 pub fn decode_call(data: &[u8]) -> Result<Call<'_>, ProtocolError> {
-    let mut message = RpcMessage::default();
-    let mut rest = data;
-
-    if let Err(e) = message.deserialize(&mut rest) {
-        warn!("Error deserializing message: {e}");
-        return Err(ProtocolError::Decode);
-    }
+    let (message, rest) = match RpcMessage::deserialize(data) {
+        Ok((msg, rest)) => (msg, rest),
+        Err(e) => {
+            warn!("Error deserializing message: {e}");
+            return Err(ProtocolError::Decode);
+        }
+    };
 
     let RpcMessageBody::Call(call) = message.body else {
         return Err(ProtocolError::Decode);

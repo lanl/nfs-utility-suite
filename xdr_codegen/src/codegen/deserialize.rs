@@ -7,7 +7,7 @@ use super::*;
 use crate::symbol_table::ValidatedSymbolTable;
 
 const DESERIALIZE_SIGNATURE: &str =
-    "pub fn deserialize(&mut self, input: &mut &[u8]) -> xdr_lib::Result<()>";
+    "pub fn deserialize(input: &[u8]) -> xdr_lib::Result<(Self, &[u8])>";
 
 impl Array {
     pub(super) fn deserialize_inline(
@@ -21,18 +21,17 @@ impl Array {
                 buf.add_line(&format!("let len = {name}.len();"));
             }
             _ => {
-                buf.add_line("let mut len = 0;");
-                buf.add_line("xdr_lib::get_u32(&mut len, input)?;");
+                buf.add_line("let (len, input) = xdr_lib::get_u32(input)?;");
             }
         };
         match &self.kind {
             ArrayKind::UserType(ty) => {
                 buf.block_statement("for _i in 0..len", |buf| {
-                    buf.add_line(&format!("let mut new = {};", ty.default_value(tab)));
-                    ty.deserialize_inline("new", buf, tab);
+                    buf.add_line(&format!("let item = {};", ty.default_value(tab)));
+                    ty.deserialize_inline("item", buf, tab);
                     match &self.size {
-                        ArraySize::Fixed(_) => buf.add_line(&format!("{name}[_i] = new;")),
-                        _ => buf.add_line(&format!("{name}.push(new);")),
+                        ArraySize::Fixed(_) => buf.add_line(&format!("{name}[_i] = item;")),
+                        _ => buf.add_line(&format!("{name}.push(item);")),
                     }
                 });
             }
@@ -42,8 +41,7 @@ impl Array {
                 buf.add_line(
                     "if input.len() < len as usize { return Err(xdr_lib::DeserializeError); }",
                 );
-                buf.add_line("let (bytes, rest) = input.split_at(len as usize);");
-                buf.add_line("*input = rest;");
+                buf.add_line("let (bytes, input) = input.split_at(len as usize);");
                 match &self.size {
                     ArraySize::Fixed(_) => {
                         buf.add_line(&format!("{name}.clone_from_slice(bytes);"))
@@ -61,8 +59,7 @@ impl Array {
                 buf.add_line(
                     "if input.len() < padding as usize { return Err(xdr_lib::DeserializeError); }",
                 );
-                buf.add_line("let (_, rest) = input.split_at(padding as usize);");
-                buf.add_line("*input = rest;");
+                buf.add_line("let (_, input) = input.split_at(padding as usize);");
             }
         }
     }
@@ -81,21 +78,24 @@ impl NamedDeclaration {
         buf: &mut CodeBuf,
         tab: &ValidatedSymbolTable,
     ) {
-        let var_name = match override_name {
-            Some(over) => over.to_string(),
-            None => format!("self.{}", self.name),
-        };
+        let var_name = override_name.unwrap_or_else(|| &self.name);
         match &self.kind {
             DeclarationKind::Scalar(ty) => {
-                ty.deserialize_inline(&var_name, buf, tab);
+                ty.deserialize_inline(var_name, buf, tab);
+                // Scalars create a new variable; assign the variable to the field in new
+                if override_name.is_none() {
+                    buf.add_line(&format!("new.{var_name} = {var_name};"));
+                }
             }
             DeclarationKind::Array(a) => {
-                a.deserialize_inline(&var_name, buf, tab);
+                // Arrays mutate the existing field of the new object
+                a.deserialize_inline(&format!("new.{var_name}"), buf, tab);
             }
             DeclarationKind::Optional(o) => {
-                o.deserialize_optional_inline(&var_name, buf, tab);
+                // XXX: how do optionals do it?
+                o.deserialize_optional_inline(var_name, buf, tab);
             }
-        }
+        };
     }
 }
 
@@ -106,15 +106,14 @@ impl ValidatedUnion {
                 ValidatedUnionBody::Bool(b) => b.deserialize_bool(buf, tab),
                 ValidatedUnionBody::Enum(e) => e.deserialize_enum(buf, tab),
             };
-            buf.add_line("Ok(())");
         });
     }
 }
 
 impl ValidatedUnionBoolBody {
     pub(super) fn deserialize_bool(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
-        buf.add_line("let mut discriminant: u32 = 0;");
-        buf.add_line("xdr_lib::get_u32(&mut discriminant, input)?;");
+        buf.add_line("let mut new = Self::default();");
+        buf.add_line("let (discriminant, input) = xdr_lib::get_u32(input)?;");
         buf.block_statement("match discriminant", |buf| {
             buf.add_line("0 => (*self).inner = None,");
             buf.code_block("_ => ", |buf| {
@@ -126,14 +125,15 @@ impl ValidatedUnionBoolBody {
                 buf.add_line("(*self).inner = Some(val)");
             });
         });
+
+        buf.add_line("Ok((new, input))");
     }
 }
 
 impl ValidatedUnionEnumBody {
     pub(super) fn deserialize_enum(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
-        buf.add_line("let mut discriminant = 0;");
-        buf.add_line("xdr_lib::get_i32(&mut discriminant, input)?;");
-        buf.block_statement("*self = match discriminant", |buf| {
+        buf.add_line("let (discriminant, input) = xdr_lib::get_i32(input)?;");
+        buf.block_statement("let new = match discriminant", |buf| {
             for arm in self.arms.iter() {
                 let discriminant_value = self.get_discriminant_value(&arm.0, tab);
                 buf.code_block(&format!("{discriminant_value} => "), |buf| {
@@ -143,7 +143,6 @@ impl ValidatedUnionEnumBody {
                             buf.add_line(&format!("Self::{arm_name}"));
                         }
                         Declaration::Named(n) => {
-                            buf.add_line(&format!("let mut inner = {};", n.default_value(tab)));
                             n.deserialize_inline(Some("inner"), buf, tab);
                             buf.add_line(&format!("Self::{arm_name}(inner) "));
                         }
@@ -157,7 +156,7 @@ impl ValidatedUnionEnumBody {
                     }
                     Declaration::Named(n) => {
                         buf.code_block("_ => ", |buf| {
-                            buf.add_line(&format!("let mut inner = {};", n.default_value(tab)));
+                            // buf.add_line(&format!("let mut inner = {};", n.default_value(tab)));
                             n.deserialize_inline(Some("inner"), buf, tab);
                             buf.add_line("Self::Default(inner) ");
                         });
@@ -167,6 +166,8 @@ impl ValidatedUnionEnumBody {
                 buf.add_line("_ => return Err(xdr_lib::DeserializeError),");
             }
         });
+
+        buf.add_line("Ok((new, input))");
     }
 }
 
@@ -221,11 +222,12 @@ impl ValidatedStruct {
 
     pub(super) fn deserialize_definition(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         buf.code_block(DESERIALIZE_SIGNATURE, |buf| {
+            buf.add_line("let mut new = Self::default();");
             for (decl, _) in self.members.iter() {
                 buf.add_line(&format!("// {}:", decl.name));
                 decl.deserialize_inline(None, buf, tab);
             }
-            buf.add_line("Ok(())");
+            buf.add_line("Ok((new, input))");
         });
     }
 }
@@ -233,16 +235,15 @@ impl ValidatedStruct {
 impl ValidatedEnum {
     pub(super) fn deserialize_definition(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         buf.code_block(DESERIALIZE_SIGNATURE, |buf| {
-            buf.add_line("let mut val = 0;");
-            buf.add_line("xdr_lib::get_i32(&mut val, input)?;");
-            buf.block_statement("*self = match val", |buf| {
+            buf.add_line("let (val, input) = xdr_lib::get_i32(input)?;");
+            buf.block_statement("let new = match val", |buf| {
                 for variant in self.variants.iter() {
                     let val = variant.1.as_const(tab);
                     buf.add_line(&format!("{} => {}::{},", val, self.name, variant.0));
                 }
                 buf.add_line("_ => return Err(xdr_lib::DeserializeError),");
             });
-            buf.add_line("Ok(())");
+            buf.add_line("Ok((new, input))");
         });
     }
 }
@@ -265,7 +266,7 @@ impl XdrType {
 
         // typedef case already handled, non-typedefs follow:
         let method = self.deserialize_method();
-        buf.add_line(&format!("{method}(&mut {var_name}, input)?;"));
+        buf.add_line(&format!("let ({var_name}, input) = {method}(input)?;"));
     }
 
     fn deserialize_method(&self) -> String {
@@ -290,16 +291,14 @@ impl XdrType {
     ) {
         if self.self_referential_optional(tab) {
             buf.code_block("loop", |buf| {
-                buf.add_line("let mut item_follows = 0;");
-                buf.add_line("xdr_lib::get_i32(&mut item_follows, input)?;");
+                buf.add_line("let (item_follows, input) = xdr_lib::get_i32(input)?;");
                 buf.add_line("if item_follows == 0 { break; }");
                 buf.add_line(&format!("let mut new = {};", self.default_value(tab)));
                 self.deserialize_inline("new", buf, tab);
                 buf.add_line(&format!("{name}.push(new)"));
             });
         } else {
-            buf.add_line("let mut optional_follows = 0;");
-            buf.add_line("xdr_lib::get_i32(&mut optional_follows, input)?;");
+            buf.add_line("let (optional_follows, input) = xdr_lib::get_i32(input)?;");
             buf.block_statement(&format!("{name} = match optional_follows"), |buf| {
                 buf.add_line("0 => None,");
                 buf.code_block("_ =>", |buf| {

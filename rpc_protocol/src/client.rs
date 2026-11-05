@@ -58,11 +58,10 @@ fn read_reply_from_stream<S: Read + Write>(
         return Err(Error::Io(e));
     }
 
-    let mut message = RpcMessage::default();
-    let mut rest = buf.as_slice();
-    if RpcMessage::deserialize(&mut message, &mut rest).is_err() {
-        return Err(Error::Protocol(ProtocolError::Decode));
-    }
+    let (message, rest) = match RpcMessage::deserialize(buf.as_slice()) {
+        Ok(m) => m,
+        Err(_) => return Err(Error::Protocol(ProtocolError::Decode)),
+    };
 
     // Assuming that the stream was just used for sending the message indicated by the arg `xid`, it
     // is unexpected to get a different XID back in the reply:
