@@ -1220,6 +1220,11 @@ impl CodeBuf {
     /// If the user actually passes multiple lines, split those up so that each line gets the right
     /// amount of indentation.
     pub fn add_line(&mut self, lines: &str) {
+        if lines.is_empty() {
+            self.contents.push('\n');
+            return;
+        }
+
         for line in lines.lines() {
             self.add_contents(line);
             self.contents.push('\n');

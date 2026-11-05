@@ -40,9 +40,10 @@ pub fn main(addr: RpcbindServerAddress) {
 /// requested in the `arg` is in the list, and returns its address if so. Otherwise, it returns an
 /// empty string.
 fn getaddr(call: &Call, service_list: &mut rpcbind::RpcbindList) -> RpcResult {
-    let mut requested = rpcbind::RpcService::default();
-    let mut arg = call.arg;
-    rpcbind::RpcService::deserialize(&mut requested, &mut arg).unwrap();
+    let Ok((requested, _)) = rpcbind::RpcService::deserialize(call.arg) else {
+        return RpcResult::GarbageArgs;
+    };
+
     debug!("GETADDR Call: {requested:?}");
 
     if let Some(service) = get_service(requested.prog, requested.vers, service_list) {
@@ -63,11 +64,9 @@ fn getaddr(call: &Call, service_list: &mut rpcbind::RpcbindList) -> RpcResult {
 
 /// Implementation of the set RPC. This adds a service to the list.
 fn set(call: &Call, service_list: &mut rpcbind::RpcbindList) -> RpcResult {
-    let mut new_service = rpcbind::RpcService::default();
-    let mut arg = call.arg;
-    if new_service.deserialize(&mut arg).is_err() {
+    let Ok((new_service, _)) = rpcbind::RpcService::deserialize(call.arg) else {
         return RpcResult::GarbageArgs;
-    }
+    };
 
     debug!("SET call: {new_service:?}");
 

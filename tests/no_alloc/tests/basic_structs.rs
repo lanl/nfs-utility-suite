@@ -21,10 +21,7 @@ fn struct_with_primitive_types() {
 
     assert_eq!(24, before.serialize(&mut bytes));
 
-    let mut after = Simple::default();
-    assert_eq!(after.get_width(), 24);
-
-    after.deserialize(&mut bytes.as_slice()).unwrap();
+    let (after, _) = Simple::deserialize(bytes.as_slice()).unwrap();
 
     assert_eq!(before, after);
 }
@@ -70,10 +67,7 @@ fn struct_with_inner_struct() {
 
     assert_eq!(52, before.serialize(&mut bytes));
 
-    let mut after = Container::default();
-    assert_eq!(after.get_width(), 52);
-
-    after.deserialize(&mut bytes.as_slice()).unwrap();
+    let (after, _) = Container::deserialize(bytes.as_slice()).unwrap();
 
     assert_eq!(before, after);
 }
@@ -87,10 +81,7 @@ fn struct_with_typedef() {
 
     assert_eq!(4, before.serialize(&mut bytes));
 
-    let mut after = HasTypedef::default();
-    assert_eq!(after.get_width(), 4);
-
-    after.deserialize(&mut bytes.as_slice()).unwrap();
+    let (after, _) = HasTypedef::deserialize(bytes.as_slice()).unwrap();
 
     assert_eq!(before, after);
 }

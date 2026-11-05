@@ -26,8 +26,7 @@ fn rpc_protocol_call() {
     };
 
     let bytes = msg.serialize_alloc();
-    let mut after = RpcMessage::default();
-    RpcMessage::deserialize(&mut after, &mut bytes.as_slice()).unwrap();
+    let (after, _) = RpcMessage::deserialize(bytes.as_slice()).unwrap();
 
     assert_eq!(msg, after);
 }
@@ -46,8 +45,7 @@ fn rpc_protocol_reply() {
     };
 
     let bytes = reply.serialize_alloc();
-    let mut after = RpcMessage::default();
-    RpcMessage::deserialize(&mut after, &mut bytes.as_slice()).unwrap();
+    let (after, _) = RpcMessage::deserialize(bytes.as_slice()).unwrap();
 
     assert_eq!(reply, after);
 }

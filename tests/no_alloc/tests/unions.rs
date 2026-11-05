@@ -13,9 +13,7 @@ fn bool_union() {
     let mut bytes = vec![1; 8];
     assert_eq!(8, before.serialize(&mut bytes));
 
-    let mut after = MyOption::default();
-
-    after.deserialize(&mut bytes.as_slice()).unwrap();
+    let (after, _) = MyOption::deserialize(bytes.as_slice()).unwrap();
     assert_eq!(after.get_width(), 8);
     assert_eq!(before, after);
 
@@ -25,7 +23,7 @@ fn bool_union() {
     assert_eq!(4, before.get_width());
     assert_eq!(4, before.serialize(&mut bytes));
 
-    after.deserialize(&mut bytes.as_slice()).unwrap();
+    let (after, _) = MyOption::deserialize(bytes.as_slice()).unwrap();
     assert_eq!(4, after.get_width());
     assert_eq!(before, after);
 }
@@ -35,16 +33,14 @@ fn basic_enum() {
     let before = Cases::two;
     let mut bytes = [1; 4];
     assert_eq!(4, before.serialize(&mut bytes));
-    let mut after = Cases::default();
-    after.deserialize(&mut bytes.as_slice()).unwrap();
+    let (after, _) = Cases::deserialize(bytes.as_slice()).unwrap();
     assert_eq!(before, after);
 }
 
 #[test]
 fn invalid_enum_variant() {
     let bad_bytes = [0, 0, 0, 4];
-    let mut after = Cases::default();
-    assert!(after.deserialize(&mut bad_bytes.as_slice()).is_err());
+    assert!(Cases::deserialize(bad_bytes.as_slice()).is_err());
 }
 
 #[test]
@@ -53,8 +49,7 @@ fn enum_union_no_default() {
     assert_eq!(before.get_width(), 8);
     let mut bytes = [1; 100];
     assert_eq!(8, before.serialize(&mut bytes));
-    let mut after = Stuff::default();
-    after.deserialize(&mut bytes.as_slice()).unwrap();
+    let (after, _) = Stuff::deserialize(bytes.as_slice()).unwrap();
     assert_eq!(after.get_width(), 8);
     assert_eq!(before, after);
 
@@ -63,14 +58,14 @@ fn enum_union_no_default() {
     });
     assert_eq!(before.get_width(), 12);
     assert_eq!(12, before.serialize(&mut bytes));
-    after.deserialize(&mut bytes.as_slice()).unwrap();
+    let (after, _) = Stuff::deserialize(bytes.as_slice()).unwrap();
     assert_eq!(after.get_width(), 12);
     assert_eq!(before, after);
 
     let before = Stuff::three;
     assert_eq!(before.get_width(), 4);
     assert_eq!(4, before.serialize(&mut bytes));
-    after.deserialize(&mut bytes.as_slice()).unwrap();
+    let (after, _) = Stuff::deserialize(bytes.as_slice()).unwrap();
     assert_eq!(after.get_width(), 4);
     assert_eq!(before, after);
 }
@@ -81,8 +76,7 @@ fn enum_union_default_void() {
     let mut bytes = [1; 4];
     assert_eq!(before.get_width(), 4);
     assert_eq!(4, before.serialize(&mut bytes));
-    let mut after = Things::default();
-    after.deserialize(&mut bytes.as_slice()).unwrap();
+    let (after, _) = Things::deserialize(bytes.as_slice()).unwrap();
     assert_eq!(after.get_width(), 4);
     assert_eq!(before, after);
 }
@@ -93,8 +87,7 @@ fn enum_union_default_non_void() {
     let mut bytes = [1; 8];
     assert_eq!(before.get_width(), 8);
     assert_eq!(8, before.serialize(&mut bytes));
-    let mut after = MoreThings::default();
-    after.deserialize(&mut bytes.as_slice()).unwrap();
+    let (after, _) = MoreThings::deserialize(bytes.as_slice()).unwrap();
     assert_eq!(after.get_width(), 8);
     assert_eq!(before, after);
 }
@@ -102,8 +95,7 @@ fn enum_union_default_non_void() {
 #[test]
 fn invalid_union_variant_no_default() {
     let bad_bytes = [0, 0, 0, 4];
-    let mut after = Stuff::default();
-    assert!(after.deserialize(&mut bad_bytes.as_slice()).is_err());
+    assert!(Stuff::deserialize(bad_bytes.as_slice()).is_err());
 }
 
 #[test]
@@ -111,7 +103,6 @@ fn unexpected_union_variant_with_default() {
     // When a union has a default arm, any discriminant value which is NOT one of the enum variants
     // is treated as the default arm:
     let bad_bytes = [0, 0, 0, 100];
-    let mut after = Things::one(7);
-    after.deserialize(&mut bad_bytes.as_slice()).unwrap();
+    let (after, _) = Things::deserialize(bad_bytes.as_slice()).unwrap();
     assert_eq!(Things::Default, after);
 }

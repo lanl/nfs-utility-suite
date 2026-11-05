@@ -497,10 +497,7 @@ fn main() -> io::Result<()> {
         )
         .expect("mount RPC error");
 
-        let mut mount_res = mount_proto::MountResult::default();
-
-        mount_res
-            .deserialize(&mut res.as_slice())
+        let (mount_res, _) = mount_proto::MountResult::deserialize(res.as_slice())
             .expect("mount result deserialization error");
 
         match &mount_res {
@@ -787,9 +784,8 @@ fn do_getattr(
     )
     .expect("getattr rpc failure");
 
-    let mut res = GetAttrResult::default();
-    res.deserialize(&mut bytes.as_slice())
-        .expect("getattr result deserialization error");
+    let (res, _) =
+        GetAttrResult::deserialize(bytes.as_slice()).expect("getattr result deserialization error");
 
     res
 }
@@ -821,9 +817,8 @@ fn do_lookup(
     )
     .expect("lookup rpc failure");
 
-    let mut res = LookupResult::default();
-    res.deserialize(&mut bytes.as_slice())
-        .expect("lookup result deserialization error");
+    let (res, _) =
+        LookupResult::deserialize(bytes.as_slice()).expect("lookup result deserialization error");
 
     res
 }
@@ -851,8 +846,7 @@ fn do_readlink(
     )
     .expect("readlink rpc failure");
 
-    let mut res = ReadlinkResult::default();
-    res.deserialize(&mut bytes.as_slice())
+    let (res, _) = ReadlinkResult::deserialize(bytes.as_slice())
         .expect("readlink result deserialization error");
 
     res
@@ -909,9 +903,8 @@ fn do_access(
     )
     .expect("access rpc failure");
 
-    let mut res = AccessResult::default();
-    res.deserialize(&mut bytes.as_slice())
-        .expect("access result deserialization error");
+    let (res, _) =
+        AccessResult::deserialize(bytes.as_slice()).expect("access result deserialization error");
 
     res
 }
@@ -943,9 +936,8 @@ fn do_read(
     )
     .expect("read rpc failure");
 
-    let mut res = ReadResult::default();
-    res.deserialize(&mut bytes.as_slice())
-        .expect("read result deserialization error");
+    let (res, _) =
+        ReadResult::deserialize(bytes.as_slice()).expect("read result deserialization error");
 
     res
 }
@@ -984,9 +976,8 @@ fn do_write(
     )
     .expect("write rpc failure");
 
-    let mut res = WriteResult::default();
-    res.deserialize(&mut bytes.as_slice())
-        .expect("write result deserialization error");
+    let (res, _) =
+        WriteResult::deserialize(bytes.as_slice()).expect("write result deserialization error");
 
     res
 }
@@ -1024,9 +1015,8 @@ fn do_sattr(
     )
     .expect("sattr rpc failure");
 
-    let mut res = SattrResult::default();
-    res.deserialize(&mut bytes.as_slice())
-        .expect("sattr result deserialization error");
+    let (res, _) =
+        SattrResult::deserialize(bytes.as_slice()).expect("sattr result deserialization error");
 
     res
 }
@@ -1060,9 +1050,8 @@ fn do_create_unchecked(
     )
     .expect("create rpc failure");
 
-    let mut res = CreateResult::default();
-    res.deserialize(&mut bytes.as_slice())
-        .expect("create result deserialization error");
+    let (res, _) =
+        CreateResult::deserialize(bytes.as_slice()).expect("create result deserialization error");
 
     res
 }
@@ -1096,9 +1085,8 @@ fn do_create_guarded(
     )
     .expect("create rpc failure");
 
-    let mut res = CreateResult::default();
-    res.deserialize(&mut bytes.as_slice())
-        .expect("create result deserialization error");
+    let (res, _) =
+        CreateResult::deserialize(bytes.as_slice()).expect("create result deserialization error");
 
     res
 }
@@ -1136,9 +1124,8 @@ fn do_create_exclusive(
     )
     .expect("create rpc failure");
 
-    let mut res = CreateResult::default();
-    res.deserialize(&mut bytes.as_slice())
-        .expect("create result deserialization error");
+    let (res, _) =
+        CreateResult::deserialize(bytes.as_slice()).expect("create result deserialization error");
 
     res
 }
@@ -1172,9 +1159,8 @@ fn do_mkdir(
     )
     .expect("mkdir rpc failure");
 
-    let mut res = MkdirResult::default();
-    res.deserialize(&mut bytes.as_slice())
-        .expect("mkdir result deserialization error");
+    let (res, _) =
+        MkdirResult::deserialize(bytes.as_slice()).expect("mkdir result deserialization error");
 
     res
 }
@@ -1212,9 +1198,8 @@ fn do_symlink(
     )
     .expect("symlink rpc failure");
 
-    let mut res = SymlinkResult::default();
-    res.deserialize(&mut bytes.as_slice())
-        .expect("symlink result deserialization error");
+    let (res, _) =
+        SymlinkResult::deserialize(bytes.as_slice()).expect("symlink result deserialization error");
 
     res
 }
@@ -1281,9 +1266,8 @@ fn do_mknod(
     )
     .expect("mknod rpc failure");
 
-    let mut res = MknodResult::default();
-    res.deserialize(&mut bytes.as_slice())
-        .expect("mknod result deserialization error");
+    let (res, _) =
+        MknodResult::deserialize(bytes.as_slice()).expect("mknod result deserialization error");
 
     res
 }
@@ -1315,9 +1299,8 @@ fn do_remove(
     )
     .expect("remove rpc failure");
 
-    let mut res = RemoveResult::default();
-    res.deserialize(&mut bytes.as_slice())
-        .expect("remove result deserialization error");
+    let (res, _) =
+        RemoveResult::deserialize(bytes.as_slice()).expect("remove result deserialization error");
 
     res
 }
@@ -1349,9 +1332,8 @@ fn do_rmdir(
     )
     .expect("rmdir rpc failure");
 
-    let mut res = RmdirResult::default();
-    res.deserialize(&mut bytes.as_slice())
-        .expect("rmdir result deserialization error");
+    let (res, _) =
+        RmdirResult::deserialize(bytes.as_slice()).expect("rmdir result deserialization error");
 
     res
 }
@@ -1389,9 +1371,8 @@ fn do_rename(
     )
     .expect("rename rpc failure");
 
-    let mut res = RenameResult::default();
-    res.deserialize(&mut bytes.as_slice())
-        .expect("rename result deserialization error");
+    let (res, _) =
+        RenameResult::deserialize(bytes.as_slice()).expect("rename result deserialization error");
 
     res
 }
@@ -1425,9 +1406,8 @@ fn do_link(
     )
     .expect("link rpc failure");
 
-    let mut res = LinkResult::default();
-    res.deserialize(&mut bytes.as_slice())
-        .expect("link result deserialization error");
+    let (res, _) =
+        LinkResult::deserialize(bytes.as_slice()).expect("link result deserialization error");
 
     res
 }
@@ -1463,9 +1443,8 @@ fn do_readdir(
     )
     .expect("readdir rpc failure");
 
-    let mut res = ReaddirResult::default();
-    res.deserialize(&mut bytes.as_slice())
-        .expect("readdir result deserialization error");
+    let (res, _) =
+        ReaddirResult::deserialize(bytes.as_slice()).expect("readdir result deserialization error");
 
     res
 }
@@ -1504,8 +1483,7 @@ fn do_readdirplus(
     )
     .expect("readdirplus rpc failure");
 
-    let mut res = ReaddirPlusResult::default();
-    res.deserialize(&mut bytes.as_slice())
+    let (res, _) = ReaddirPlusResult::deserialize(bytes.as_slice())
         .expect("readdirplus result deserialization error");
 
     res
@@ -1534,9 +1512,8 @@ fn do_fsstat(
     )
     .expect("fsstat rpc failure");
 
-    let mut res = FsStatResult::default();
-    res.deserialize(&mut bytes.as_slice())
-        .expect("fsstat result deserialization error");
+    let (res, _) =
+        FsStatResult::deserialize(bytes.as_slice()).expect("fsstat result deserialization error");
 
     res
 }
@@ -1564,9 +1541,8 @@ fn do_fsinfo(
     )
     .expect("fsinfo rpc failure");
 
-    let mut res = FsInfoResult::default();
-    res.deserialize(&mut bytes.as_slice())
-        .expect("fsinfo result deserialization error");
+    let (res, _) =
+        FsInfoResult::deserialize(bytes.as_slice()).expect("fsinfo result deserialization error");
 
     res
 }
@@ -1594,8 +1570,7 @@ fn do_pathconf(
     )
     .expect("pathconf rpc failure");
 
-    let mut res = PathconfResult::default();
-    res.deserialize(&mut bytes.as_slice())
+    let (res, _) = PathconfResult::deserialize(bytes.as_slice())
         .expect("pathconf result deserialization error");
 
     res
@@ -1628,9 +1603,8 @@ fn do_commit(
     )
     .expect("commit rpc failure");
 
-    let mut res = CommitResult::default();
-    res.deserialize(&mut bytes.as_slice())
-        .expect("commit result deserialization error");
+    let (res, _) =
+        CommitResult::deserialize(bytes.as_slice()).expect("commit result deserialization error");
 
     res
 }
