@@ -50,10 +50,11 @@ pub fn get_bool(input: &[u8]) -> Result<(bool, &[u8])> {
         return Err(DeserializeError);
     }
     let (bool_bytes, rest) = input.split_at(std::mem::size_of::<u32>());
-    Ok((
-        !matches!(u32::from_be_bytes(bool_bytes.try_into().unwrap()), 0),
-        rest,
-    ))
+    match u32::from_be_bytes(bool_bytes.try_into().unwrap()) {
+        0 => Ok((false, rest)),
+        1 => Ok((true, rest)),
+        _ => Err(DeserializeError),
+    }
 }
 
 pub fn serialize_bool(src: &bool) -> [u8; 4] {
@@ -341,5 +342,22 @@ where
             self.err = true;
             Some(Err(DeserializeError))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn invalid_bools() {
+        let invalid = 2u32.to_be_bytes();
+        assert!(get_bool(invalid.as_slice()).is_err());
+
+        let invalid = u32::MAX.to_be_bytes();
+        assert!(get_bool(invalid.as_slice()).is_err());
+
+        let invalid = 1u32.to_le_bytes(); // incorrectly encoded
+        assert!(get_bool(invalid.as_slice()).is_err());
     }
 }
