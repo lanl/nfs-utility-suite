@@ -52,3 +52,17 @@ fn missing_padding() {
 
     assert!(UnlimitedOpaqueArray::deserialize(msg.as_slice()).is_err());
 }
+
+#[test]
+fn too_long_array() {
+    use arrays::*;
+
+    let arr = OpaqueArrays {
+        bytes: [0; 3],
+        bytes_2: vec![0; 4], // Too long: limit is 3
+        bytes_3: vec![0; 1],
+    };
+    let bytes = arr.serialize_alloc();
+
+    assert!(OpaqueArrays::deserialize(&bytes).is_err());
+}

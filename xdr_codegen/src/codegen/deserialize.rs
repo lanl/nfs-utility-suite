@@ -21,7 +21,14 @@ impl Array {
                 let len = len.as_const(tab);
                 buf.add_line(&format!("let len = {len};"));
             }
-            _ => {
+            ArraySize::Limited(len) => {
+                let len = len.as_const(tab);
+                buf.add_line("let (len, input) = xdr_lib::get_u32(input)?;");
+                buf.add_line(&format!(
+                    "if len > {len} {{ return Err(xdr_lib::DeserializeError); }}"
+                ));
+            }
+            ArraySize::Unlimited => {
                 buf.add_line("let (len, input) = xdr_lib::get_u32(input)?;");
             }
         };
