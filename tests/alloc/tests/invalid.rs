@@ -66,3 +66,23 @@ fn too_long_array() {
 
     assert!(OpaqueArrays::deserialize(&bytes).is_err());
 }
+
+/// On 32-bit systems, tests that overflow is detected when an array length prefix is too close to
+/// u32::MAX.
+///
+/// On 64-bit systems, UnlimitedOpaqueArray::deserialize() still returns an error, although it's
+/// actually because the length prefix is longer than the buffer and not because of overflow.
+/// Still a useful test though.
+#[test]
+fn array_length_prefix_overflows() {
+    use arrays::*;
+
+    let arr = UnlimitedOpaqueArray { data: vec![0; 10] };
+    let mut bytes = arr.serialize_alloc();
+
+    for i in 0..3 {
+        let overflowing_length = u32::MAX - i;
+        bytes[0..4].copy_from_slice(&overflowing_length.to_be_bytes());
+        assert!(UnlimitedOpaqueArray::deserialize(&bytes).is_err());
+    }
+}
