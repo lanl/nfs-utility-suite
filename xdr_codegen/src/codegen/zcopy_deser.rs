@@ -698,7 +698,7 @@ impl Array {
 
         if let Some(elem_width) = self.elem_size(tab) {
             buf.add_line(&format!(
-                "let required = xdr_lib::geq_4byte_boundary(length * {}usize) + _array_count_size;",
+                "let required = xdr_lib::padded_4byte(length * {}usize) + _array_count_size;",
                 elem_width
             ));
 

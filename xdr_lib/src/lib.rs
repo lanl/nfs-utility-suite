@@ -117,11 +117,6 @@ pub fn get_bool_infallible(input: &[u8]) -> bool {
     }
 }
 
-#[inline(always)]
-pub fn geq_4byte_boundary(offset: usize) -> usize {
-    (offset + 3) & !(0b11usize)
-}
-
 pub trait Reader<'a> {
     fn from_buf(buf: &'a [u8]) -> Result<Self>
     where
