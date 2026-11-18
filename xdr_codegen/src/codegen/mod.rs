@@ -391,6 +391,24 @@ impl NamedDeclaration {
         }
     }
 
+    /// Given a named declaration, like
+    ///
+    ///     unsigned int len;
+    ///
+    /// turns the name into an "namespaced" name suitable for a local variable:
+    ///
+    ///     field_len
+    ///
+    /// The purpose is so that field names do not collide with local variables used in the
+    /// generated deserialization code (e.g., `len`, `input`, etc.).
+    fn name_as_local_var(&self) -> String {
+        // For names that were escaped due to colliding with a Rust keyword, like
+        // "type" => "r#type", frst remove the escape prefix:
+        let original_name = self.name.strip_prefix("r#").unwrap_or(&self.name);
+
+        format!("field_{}", original_name)
+    }
+
     fn is_varlen_reader(&self, tab: &ValidatedSymbolTable) -> bool {
         match &self.kind {
             DeclarationKind::Scalar(ty) | DeclarationKind::Optional(ty) => {
