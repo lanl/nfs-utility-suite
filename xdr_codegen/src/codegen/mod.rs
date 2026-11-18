@@ -438,7 +438,7 @@ impl NamedDeclaration {
                         "4usize + "
                     };
                     buf.add_line(&format!(
-                        "{}xdr_lib::padded_4byte({}.len())",
+                        "{}xdr_lib::padded_infallible({}.len())",
                         count_addition, name
                     ))
                 }
@@ -451,13 +451,13 @@ impl NamedDeclaration {
                     };
                     if let Some(elem_size) = elem_size {
                         buf.add_line(&format!(
-                            "{}xdr_lib::padded_4byte({}.len() * {})",
+                            "{}xdr_lib::padded_infallible({}.len() * {})",
                             count_addition, name, elem_size
                         ));
                     } else {
                         buf.block_with_trailer(
                             &format!(
-                                "{count_addition}xdr_lib::padded_4byte({}.iter().map(|_v|",
+                                "{count_addition}xdr_lib::padded_infallible({}.iter().map(|_v|",
                                 name
                             ),
                             ").sum())",
@@ -471,7 +471,10 @@ impl NamedDeclaration {
             DeclarationKind::Optional(xdr_type) => {
                 if self.is_self_referential(tab) {
                     buf.block_with_trailer(
-                        &format!("4usize + xdr_lib::padded_4byte({}.iter().map(|_v|", name),
+                        &format!(
+                            "4usize + xdr_lib::padded_infallible({}.iter().map(|_v|",
+                            name
+                        ),
                         ").sum())",
                         |buf| {
                             buf.code_block("4usize +", |buf| {
