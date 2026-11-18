@@ -57,6 +57,14 @@ pub fn get_bool(input: &[u8]) -> Result<(bool, &[u8])> {
     }
 }
 
+/// Reads a length prefix for a buffer, which is a u32 in XDR. But Rust wants a usize for this, so
+/// casts the result to usize.
+pub fn get_size(input: &[u8]) -> Result<(usize, &[u8])> {
+    let (val, rest) = get_u32(input)?;
+
+    Ok((val as usize, rest))
+}
+
 pub fn serialize_bool(src: &bool) -> [u8; 4] {
     match src {
         true => 1_u32.to_be_bytes(),
