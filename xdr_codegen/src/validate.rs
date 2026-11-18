@@ -105,15 +105,10 @@ impl ValidatedSchema {
 impl Definition {
     fn validate(self, tab: &ValidatedSymbolTable) -> crate::Result<ValidatedDefinition> {
         let ret = match self {
-            Definition::Const(cdef) => match cdef.value {
-                Value::Int(_) => ValidatedDefinition::Const(ConstDefinition {
-                    name: cdef.name,
-                    value: cdef.value,
-                }),
-                Value::Name(_) => {
-                    return Err(XdrError::InvalidConstantDefinition(cdef.name));
-                }
-            },
+            Definition::Const(cdef) => ValidatedDefinition::Const(ConstDefinition {
+                name: cdef.name,
+                value: cdef.value,
+            }),
             Definition::TypeDef(td) => ValidatedDefinition::TypeDef(td),
             Definition::Struct(s) => ValidatedDefinition::Struct(s.validate(tab)?),
             Definition::Enum(e) => ValidatedDefinition::Enum(ValidatedEnum {
@@ -165,11 +160,7 @@ impl Array {
                     Value::Name(name) => {
                         let constval = tab.lookup_definition(name);
                         if let ValidatedDefinition::Const(constval) = constval {
-                            if let Value::Int(intval) = constval.value {
-                                intval as usize
-                            } else {
-                                panic!("constant \"{name}\" passed to array is not immediately an integer");
-                            }
+                            constval.value as usize
                         } else {
                             panic!("definition for value passed as array length specifier \"{name}\" is not a constant");
                         }

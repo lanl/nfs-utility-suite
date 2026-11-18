@@ -20,7 +20,7 @@ impl ValidatedDefinition {
             ValidatedDefinition::Struct(s) => format!("{}Reader<'a>", s.name),
             ValidatedDefinition::Enum(e) => e.name.to_string(),
             ValidatedDefinition::Union(u) => format!("{}Reader<'a>", u.name),
-            ValidatedDefinition::Const(c) => c.value.as_type_name(tab),
+            ValidatedDefinition::Const(_) => panic!("A constant cannot be a type name."),
             ValidatedDefinition::TypeDef(t) => match &t.decl.kind {
                 DeclarationKind::Scalar(ty) => ty.as_zcopy_deser_type_name(tab),
                 DeclarationKind::Optional(o) => o.optional_type_name_zcopy(tab),

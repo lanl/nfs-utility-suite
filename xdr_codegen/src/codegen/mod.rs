@@ -126,18 +126,11 @@ impl ValidatedDefinition {
     fn definition_copy(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable, params: &Params) {
         match self {
             ValidatedDefinition::Const(c) => {
-                match &c.value {
-                    Value::Int(n) => {
-                        buf.add_line(&format!(
-                            "pub const {}: u64 = {};",
-                            c.name.to_uppercase(),
-                            n
-                        ));
-                    }
-                    Value::Name(name) => {
-                        todo!("{name}");
-                    }
-                };
+                buf.add_line(&format!(
+                    "pub const {}: u64 = {};",
+                    c.name.to_uppercase(),
+                    c.value,
+                ));
             }
 
             ValidatedDefinition::Enum(e) => {
@@ -190,7 +183,7 @@ impl ValidatedDefinition {
             ValidatedDefinition::Struct(s) => s.name.to_string(),
             ValidatedDefinition::Enum(e) => e.name.to_string(),
             ValidatedDefinition::Union(u) => u.name.to_string(),
-            ValidatedDefinition::Const(c) => c.value.as_type_name(tab),
+            ValidatedDefinition::Const(_) => panic!("A constant cannot be a type name."),
             ValidatedDefinition::TypeDef(t) => match &t.decl.kind {
                 DeclarationKind::Scalar(ty) => ty.as_type_name(tab),
                 DeclarationKind::Optional(o) => o.optional_type_name(tab),
@@ -212,26 +205,19 @@ impl ValidatedDefinition {
         }
     }
 
-    fn as_const(&self, tab: &ValidatedSymbolTable) -> u64 {
+    fn as_const(&self) -> u64 {
         match self {
-            ValidatedDefinition::Const(c) => c.value.as_const(tab),
+            ValidatedDefinition::Const(c) => c.value,
             _ => panic!("not a constant"),
         }
     }
 }
 
 impl Value {
-    fn as_type_name(&self, tab: &ValidatedSymbolTable) -> String {
-        match self {
-            Value::Int(i) => format!("{i}"),
-            Value::Name(name) => tab.lookup_definition(name).as_type_name(tab),
-        }
-    }
-
     fn as_const(&self, tab: &ValidatedSymbolTable) -> u64 {
         match self {
             Value::Int(i) => *i,
-            Value::Name(name) => tab.lookup_definition(name).as_const(tab),
+            Value::Name(name) => tab.lookup_definition(name).as_const(),
         }
     }
 }
@@ -263,7 +249,7 @@ impl Array {
             ArraySize::Fixed(v) => {
                 let len = &match v {
                     Value::Int(i) => *i,
-                    Value::Name(name) => tab.lookup_definition(name).as_const(tab),
+                    Value::Name(name) => tab.lookup_definition(name).as_const(),
                 };
                 format!("[{inner_type}; {len}]")
             }
@@ -998,7 +984,7 @@ impl ValidatedEnum {
             if name == var.0 {
                 return match &var.1 {
                     Value::Int(i) => Some(*i),
-                    Value::Name(n) => Some(tab.lookup_definition(n).as_const(tab)),
+                    Value::Name(n) => Some(tab.lookup_definition(n).as_const()),
                 };
             }
         }
