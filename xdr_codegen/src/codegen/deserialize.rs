@@ -23,13 +23,13 @@ impl Array {
             }
             ArraySize::Limited(len) => {
                 let len = len.as_const(tab);
-                buf.add_line("let (len, input) = xdr_lib::get_u32(input)?;");
+                buf.add_line("let (len, input) = xdr_lib::get_size(input)?;");
                 buf.add_line(&format!(
                     "if len > {len} {{ return Err(xdr_lib::DeserializeError); }}"
                 ));
             }
             ArraySize::Unlimited => {
-                buf.add_line("let (len, input) = xdr_lib::get_u32(input)?;");
+                buf.add_line("let (len, input) = xdr_lib::get_size(input)?;");
             }
         };
         match &self.kind {
@@ -53,10 +53,8 @@ impl Array {
             byte_or_ascii => {
                 // `len` is read from the input, so it has to be checked against what is left of
                 // the input before splitting on it.
-                buf.add_line(
-                    "if input.len() < len as usize { return Err(xdr_lib::DeserializeError); }",
-                );
-                buf.add_line("let (xdr_bytes, input) = input.split_at(len as usize);");
+                buf.add_line("if input.len() < len { return Err(xdr_lib::DeserializeError); }");
+                buf.add_line("let (xdr_bytes, input) = input.split_at(len);");
 
                 match &self.size {
                     ArraySize::Fixed(len) => {
@@ -78,10 +76,8 @@ impl Array {
                     },
                 };
                 buf.add_line("let padding = (4 - len % 4) % 4;");
-                buf.add_line(
-                    "if input.len() < padding as usize { return Err(xdr_lib::DeserializeError); }",
-                );
-                buf.add_line("let (_, input) = input.split_at(padding as usize);");
+                buf.add_line("if input.len() < padding { return Err(xdr_lib::DeserializeError); }");
+                buf.add_line("let (_, input) = input.split_at(padding);");
             }
         }
     }
