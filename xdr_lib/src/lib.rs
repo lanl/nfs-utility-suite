@@ -72,12 +72,23 @@ pub fn serialize_bool(src: &bool) -> [u8; 4] {
     }
 }
 
-pub fn padded_4byte(len: usize) -> usize {
-    (len + 3) & !(0b11usize)
+/// Pad a value to the least multiple of 4 greater than or equal to the value.
+///
+/// Returns an error if overflow would occur.
+pub fn padded(val: usize) -> Result<usize> {
+    let padding = (4 - (val % 4)) % 4;
+    val.checked_add(padding).ok_or(DeserializeError)
+}
+
+/// Pad a value, panicking instead of returning an error if the value would overflow.
+///
+/// Should only be used in cases where the data is trusted.
+pub fn padded_infallible(val: usize) -> usize {
+    padded(val).expect("Overflow when computing padding.")
 }
 
 pub fn encode_padding(offset: usize, buf: &mut [u8]) -> usize {
-    let padded_offset: usize = padded_4byte(offset);
+    let padded_offset: usize = padded_infallible(offset);
     buf[offset..padded_offset].fill(0u8);
     padded_offset
 }
@@ -362,5 +373,14 @@ mod tests {
 
         let invalid = 1u32.to_le_bytes(); // incorrectly encoded
         assert!(get_bool(invalid.as_slice()).is_err());
+    }
+
+    #[test]
+    /// Values between usize::MAX and (usize::MAX - 2) should return an error when padding is
+    /// attempted.
+    fn padding_overflow() {
+        for i in 0..3 {
+            assert!(padded(usize::MAX - i).is_err());
+        }
     }
 }
