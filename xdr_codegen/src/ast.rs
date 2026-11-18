@@ -51,7 +51,7 @@ pub enum Definition {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConstDefinition {
     pub name: String,
-    pub value: Value,
+    pub value: u64,
 }
 
 #[derive(Debug, Clone, PartialEq)]

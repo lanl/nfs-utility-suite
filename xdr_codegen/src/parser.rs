@@ -200,12 +200,8 @@ impl<'src> Parser<'src> {
         self.expect(TokenKind::Equal, "Expected '=' after const name");
         let tok = self.next();
         let value = match &tok.kind {
-            TokenKind::Number(n) => Value::Int(*n),
-            TokenKind::Identifier(name) => Value::Name(name.to_string()),
-            _ => Parser::error(
-                "Expected constant or identifier in const definition",
-                Some(tok),
-            ),
+            TokenKind::Number(n) => *n,
+            _ => Parser::error("Expected integer constant in const definition", Some(tok)),
         };
         Definition::Const(ConstDefinition { name, value })
     }
