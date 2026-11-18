@@ -51,9 +51,11 @@ impl Array {
                 }
             }
             byte_or_ascii => {
-                // `len` is read from the input, so it has to be checked against what is left of
-                // the input before splitting on it.
-                buf.add_line("if input.len() < len { return Err(xdr_lib::DeserializeError); }");
+                buf.add_line("let padding = (4 - len % 4) % 4;");
+                // Make sure that the network-provided `len` isn't longer than the buffer:
+                buf.add_line(
+                    "if input.len() < len + padding { return Err(xdr_lib::DeserializeError); }",
+                );
                 buf.add_line("let (xdr_bytes, input) = input.split_at(len);");
 
                 match &self.size {
@@ -75,8 +77,6 @@ impl Array {
                         ArrayKind::UserType(_) => unreachable!(),
                     },
                 };
-                buf.add_line("let padding = (4 - len % 4) % 4;");
-                buf.add_line("if input.len() < padding { return Err(xdr_lib::DeserializeError); }");
                 buf.add_line("let (_, input) = input.split_at(padding);");
             }
         }
