@@ -49,8 +49,7 @@ case FALSE:
 enum Cases {
     one = 1,
     two = 2,
-    three = 3,
-    four = 4
+    three = 3
 };
 
 union StuffOrPlant switch (Cases hello) {
@@ -75,8 +74,6 @@ case two:
     SameWidthDifferentStuff differentThings;
 case three:
     Stuff sameThings;
-case four:
-    int hi;
 default:
     Cases dead;
 };
@@ -107,4 +104,35 @@ case one:
         int *a;
 case two:
         void;
+};
+
+union NoDefault switch (Cases blah) {
+case one:
+	int a;
+case two:
+	AnOption b;
+case three:
+	void;
+};
+
+union VoidDefault switch (Cases blah) {
+case one:
+	int a;
+case two:
+	int b;
+case three:
+	int c;
+default:
+	void;
+};
+
+union IntDefault switch (Cases blah) {
+case one:
+	int a;
+case two:
+	int b;
+case three:
+	int c;
+default:
+	int d;
 };

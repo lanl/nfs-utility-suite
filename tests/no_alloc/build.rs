@@ -3,7 +3,7 @@ fn main() {
         .file("../input/structs.x")
         .file("../input/arrays.x")
         .file("../input/optional.x")
-        .file("input/unions.x")
+        .file("../input/unions.x")
         .enable_no_alloc()
         .disable_alloc()
         .run()
