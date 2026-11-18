@@ -239,13 +239,13 @@ impl ValidatedStruct {
         buf.code_block(DESERIALIZE_SIGNATURE, |buf| {
             for (decl, _) in self.members.iter() {
                 buf.add_line(&format!("// {}:", decl.name));
-                decl.deserialize_inline(None, buf, tab);
+                decl.deserialize_inline(Some(&decl.name_as_local_var()), buf, tab);
                 buf.add_line("");
             }
 
             buf.block_statement("let new =  Self", |buf| {
                 for (decl, _) in self.members.iter() {
-                    buf.add_line(&format!("{},", decl.name));
+                    buf.add_line(&format!("{}: {},", decl.name, decl.name_as_local_var()));
                 }
             });
             buf.add_line("");
