@@ -304,3 +304,27 @@ fn mount_proto_multiple_optionals() {
     let (after, _) = exports::deserialize(bytes.as_slice()).unwrap();
     assert_eq!(exports, after);
 }
+
+#[test]
+fn int_union() {
+    let before = IntDiscriminant::VAL1(7);
+    let bytes = before.serialize_alloc();
+    let (after, _) = IntDiscriminant::deserialize(&bytes).unwrap();
+    assert_eq!(before, after);
+
+    let before = IntDiscriminant::VAL2(0);
+    let bytes = before.serialize_alloc();
+    let (after, _) = IntDiscriminant::deserialize(&bytes).unwrap();
+    assert_eq!(before, after);
+}
+
+#[test]
+fn nonvoid_bool_union() {
+    let before = NonVoidBool::True(123);
+    let (after, _) = NonVoidBool::deserialize(&before.serialize_alloc()).unwrap();
+    assert_eq!(before, after);
+
+    let before = NonVoidBool::False(i64::MAX);
+    let (after, _) = NonVoidBool::deserialize(&before.serialize_alloc()).unwrap();
+    assert_eq!(before, after);
+}
