@@ -463,10 +463,7 @@ fn is_declaration_option_of_name(
             let XdrType::Name(member_type_name) = ty else {
                 return false;
             };
-            if *member_type_name != outer_name {
-                return false;
-            }
-            true
+            *member_type_name == outer_name
         }
         DeclarationKind::Scalar(ty) => {
             let XdrType::Name(name) = ty else {
