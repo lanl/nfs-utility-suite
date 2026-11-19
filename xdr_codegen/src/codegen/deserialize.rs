@@ -125,15 +125,15 @@ impl ValidatedUnion {
 
 impl ValidatedUnionBoolBody {
     pub(super) fn deserialize_bool(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
-        buf.add_line("let (discriminant, input) = xdr_lib::get_u32(input)?;");
+        buf.add_line("let (discriminant, input) = xdr_lib::get_bool(input)?;");
         buf.code_block("match discriminant", |buf| {
-            buf.code_block("0 => ", |buf| {
+            buf.code_block("false => ", |buf| {
                 buf.block_statement("let new = Self", |buf| {
                     buf.add_line("inner: None,");
                 });
                 buf.add_line("Ok((new, input))");
             });
-            buf.code_block("_ => ", |buf| {
+            buf.code_block("true => ", |buf| {
                 self.true_arm.deserialize_inline(Some("val"), buf, tab);
                 buf.block_statement("let new = Self", |buf| {
                     buf.add_line("inner: Some(val),");
@@ -313,24 +313,24 @@ impl XdrType {
             buf.add_line("let mut input2 = input;");
             buf.block_statement("loop", |buf| {
                 buf.add_line("let input = input2;");
-                buf.add_line("let (item_follows, input) = xdr_lib::get_i32(input)?;");
+                buf.add_line("let (item_follows, input) = xdr_lib::get_bool(input)?;");
                 buf.add_line("input2 = input;");
-                buf.add_line("if item_follows == 0 { break; }");
+                buf.add_line("if !item_follows { break; }");
                 self.deserialize_inline("new", buf, tab);
                 buf.add_line("input2 = input;");
                 buf.add_line(&format!("{name}.push(new)"));
             });
             buf.add_line("let input = input2;");
         } else {
-            buf.add_line("let (optional_follows, input) = xdr_lib::get_i32(input)?;");
+            buf.add_line("let (optional_follows, input) = xdr_lib::get_bool(input)?;");
             buf.block_statement(
                 &format!("let ({name}, input) = match optional_follows"),
                 |buf| {
-                    buf.add_line("0 => (None, input),");
-                    buf.code_block("_ =>", |buf| {
+                    buf.add_line("false => (None, input),");
+                    buf.code_block("true =>", |buf| {
                         self.deserialize_inline("new", buf, tab);
                         buf.add_line("(Some(new), input)");
-                    })
+                    });
                 },
             );
         }
