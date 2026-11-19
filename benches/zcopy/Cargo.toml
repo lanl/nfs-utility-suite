@@ -10,7 +10,6 @@ criterion = "0.8"
 path = "src/zcopy_recurse_optional.rs"
 name = "zcopy_recurse_optional"
 harness = false
-debug = true
 
 [[bench]]
 path = "src/getdents_to_readdir.rs"
