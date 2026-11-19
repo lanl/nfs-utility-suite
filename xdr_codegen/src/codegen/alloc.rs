@@ -125,12 +125,11 @@ impl ValidatedStruct {
 }
 
 impl ValidatedEnum {
-    pub(super) fn serialize_definition(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
+    pub(super) fn serialize_definition(&self, buf: &mut CodeBuf) {
         buf.code_block("pub fn serialize_alloc(&self) -> Vec<u8>", |buf| {
             buf.block_statement("let val: i32 = match self", |buf| {
                 for variant in self.variants.iter() {
-                    let val = variant.1.as_const(tab);
-                    buf.add_line(&format!("{}::{} => {},", self.name, variant.0, val));
+                    buf.add_line(&format!("{}::{} => {},", self.name, variant.0, variant.1));
                 }
             });
             buf.add_line("val.to_be_bytes().to_vec()");

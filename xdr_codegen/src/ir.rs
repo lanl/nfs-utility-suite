@@ -27,7 +27,7 @@ pub enum ValidatedDefinition {
 #[derive(Debug, PartialEq, Clone)]
 pub struct ValidatedEnum {
     pub name: String,
-    pub variants: Vec<(String, Value)>,
+    pub variants: Vec<(String, i32)>,
     pub size: DefinitionSize,
 }
 

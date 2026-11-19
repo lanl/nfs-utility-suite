@@ -254,13 +254,12 @@ impl ValidatedStruct {
 }
 
 impl ValidatedEnum {
-    pub(super) fn deserialize_definition(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
+    pub(super) fn deserialize_definition(&self, buf: &mut CodeBuf) {
         buf.code_block(DESERIALIZE_SIGNATURE, |buf| {
             buf.add_line("let (val, input) = xdr_lib::get_i32(input)?;");
             buf.block_statement("let new = match val", |buf| {
                 for variant in self.variants.iter() {
-                    let val = variant.1.as_const(tab);
-                    buf.add_line(&format!("{} => {}::{},", val, self.name, variant.0));
+                    buf.add_line(&format!("{} => {}::{},", variant.1, self.name, variant.0));
                 }
                 buf.add_line("_ => return Err(xdr_lib::DeserializeError),");
             });

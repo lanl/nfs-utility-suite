@@ -111,14 +111,7 @@ impl Definition {
             }),
             Definition::TypeDef(td) => ValidatedDefinition::TypeDef(td),
             Definition::Struct(s) => ValidatedDefinition::Struct(s.validate(tab)?),
-            Definition::Enum(e) => ValidatedDefinition::Enum(ValidatedEnum {
-                name: e.name,
-                variants: e.variants,
-                size: DefinitionSize {
-                    known: 4,
-                    deps: Vec::new(),
-                },
-            }),
+            Definition::Enum(e) => ValidatedDefinition::Enum(e.validate(tab)),
             Definition::Union(u) => {
                 let name = u.name;
                 let body = u.body;
@@ -130,6 +123,36 @@ impl Definition {
         };
 
         Ok(ret)
+    }
+}
+
+impl XdrEnum {
+    fn validate(self, tab: &ValidatedSymbolTable) -> ValidatedEnum {
+        let variants = self
+            .variants
+            .into_iter()
+            .map(|(name, value)| {
+                let value: u64 = match value {
+                    Value::Int(val) => val,
+                    Value::Name(n) => tab.lookup_definition(&n).as_const(),
+                };
+
+                let value: i32 = value
+                    .try_into()
+                    .expect("Value {val} cannot be an enum variant, must fit into i32.");
+
+                (name, value)
+            })
+            .collect();
+
+        ValidatedEnum {
+            name: self.name,
+            variants,
+            size: DefinitionSize {
+                known: 4,
+                deps: Vec::new(),
+            },
+        }
     }
 }
 
@@ -495,7 +518,7 @@ impl XdrUnionEnumBody {
                     panic!("Union arms must be identifiers, not numbers.");
                 };
 
-                let val = match &self.discriminant {
+                let val: u32 = match &self.discriminant {
                     Some(enum_name) => {
                         let ValidatedDefinition::Enum(e) = tab.lookup_definition(enum_name) else {
                             panic!(
@@ -503,14 +526,14 @@ impl XdrUnionEnumBody {
                             );
                         };
 
-                        e.resolve_value(name, tab)
+                        e.resolve_value(name)
+                            .try_into()
+                            .expect("Negative enumeration value is illegal for union discriminant.")
                     }
-                    None => tab.lookup_definition(name).as_const(),
+                    None => tab.lookup_definition(name).as_const().try_into().expect(
+                        "Constant value greater than u32::MAX is illegal for union discriminant.",
+                    ),
                 };
-
-                let val: u32 = val.try_into().expect(
-                    "Constant value greater than u32::MAX is illegal for union discriminant.",
-                );
 
                 ValidatedUnionArm {
                     val,
@@ -524,13 +547,10 @@ impl XdrUnionEnumBody {
 
 impl ValidatedEnum {
     /// Given the string `name`, look it up in this enum and return its integer value.
-    fn resolve_value(&self, name: &str, tab: &ValidatedSymbolTable) -> u64 {
+    fn resolve_value(&self, name: &str) -> i32 {
         for var in self.variants.iter() {
             if name == var.0 {
-                return match &var.1 {
-                    Value::Int(i) => *i,
-                    Value::Name(n) => tab.lookup_definition(n).as_const(),
-                };
+                return var.1;
             }
         }
 

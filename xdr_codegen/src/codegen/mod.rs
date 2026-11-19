@@ -153,7 +153,7 @@ impl ValidatedDefinition {
     fn implementation(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable, params: &Params) {
         match self {
             ValidatedDefinition::Enum(e) => {
-                e.codegen(buf, tab, params);
+                e.codegen(buf, params);
             }
             ValidatedDefinition::Struct(s) => {
                 s.codegen(buf, tab, params);
@@ -889,21 +889,21 @@ impl ValidatedStruct {
 }
 
 impl ValidatedEnum {
-    fn codegen(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable, params: &Params) {
+    fn codegen(&self, buf: &mut CodeBuf, params: &Params) {
         self.default(buf);
         buf.code_block(&format!("impl {}", self.name), |buf| {
             if params.alloc {
-                self.serialize_definition(buf, tab);
+                self.serialize_definition(buf);
             }
             if params.no_alloc {
-                self.serialize_no_alloc(buf, tab);
+                self.serialize_no_alloc(buf);
             }
             buf.add_line("");
 
             if params.zcopy {
-                self.deserialize_definition_zcopy(buf, tab);
+                self.deserialize_definition_zcopy(buf);
             } else {
-                self.deserialize_definition(buf, tab);
+                self.deserialize_definition(buf);
             }
         });
         buf.add_line("");

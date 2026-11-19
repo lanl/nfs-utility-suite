@@ -649,19 +649,17 @@ impl ValidatedStruct {
 }
 
 impl ValidatedEnum {
-    pub(super) fn deserialize_definition_zcopy(
-        &self,
-        buf: &mut CodeBuf,
-        tab: &ValidatedSymbolTable,
-    ) {
+    pub(super) fn deserialize_definition_zcopy(&self, buf: &mut CodeBuf) {
         buf.code_block(
             "pub fn deserialize(_input: &[u8]) -> xdr_lib::Result<Self>",
             |buf| {
                 buf.add_line("let val = xdr_lib::get_i32_infallible(_input);");
                 buf.code_block("match val", |buf| {
                     for variant in self.variants.iter() {
-                        let val = variant.1.as_const(tab);
-                        buf.add_line(&format!("{} => Ok({}::{}),", val, self.name, variant.0));
+                        buf.add_line(&format!(
+                            "{} => Ok({}::{}),",
+                            variant.1, self.name, variant.0
+                        ));
                     }
                     buf.add_line("_ => Err(xdr_lib::DeserializeError),");
                 });
