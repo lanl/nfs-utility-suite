@@ -109,6 +109,7 @@ pub enum XdrUnionBody {
 #[derive(Debug, PartialEq, Clone)]
 pub struct XdrUnionBoolBody {
     pub true_arm: NamedDeclaration,
+    pub false_arm: Declaration,
 }
 
 /// An "enum" style union (as opposed to a bool style union) is used for enum-discriminated as well

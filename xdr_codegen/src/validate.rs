@@ -311,6 +311,10 @@ impl XdrStruct {
 
 impl XdrUnionBoolBody {
     fn validate(self, u_name: String, _tab: &ValidatedSymbolTable) -> ValidatedDefinition {
+        if matches!(self.false_arm, Declaration::Named(_)) {
+            return self.validate_nonvoid_false_arm(u_name);
+        }
+
         let arm_names = vec![self.true_arm.name.clone()];
 
         // bool union body size is never known as there is always a void member and a non void
@@ -328,6 +332,37 @@ impl XdrUnionBoolBody {
                 known: 4,
                 deps: arm_names,
             },
+        })
+    }
+
+    fn validate_nonvoid_false_arm(self, u_name: String) -> ValidatedDefinition {
+        let arms = vec![
+            ValidatedUnionArm {
+                val: 1,
+                name: "True".to_owned(),
+                decl: Declaration::Named(self.true_arm),
+            },
+            ValidatedUnionArm {
+                val: 0,
+                name: "False".to_owned(),
+                decl: self.false_arm,
+            },
+        ];
+        let deps = vec!["True".to_owned(), "False".to_owned()];
+
+        let body = ValidatedUnionBody::Enum(ValidatedUnionEnumBody {
+            arms,
+            default_arm: None,
+            size: DefinitionSize {
+                known: 0,
+                deps: deps.clone(),
+            },
+        });
+
+        ValidatedDefinition::Union(ValidatedUnion {
+            name: u_name,
+            body,
+            size: DefinitionSize { known: 4, deps },
         })
     }
 }

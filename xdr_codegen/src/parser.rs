@@ -301,14 +301,14 @@ impl<'src> Parser<'src> {
             }
             TokenKind::Bool => {
                 self.xdr_union_discriminant_remainder();
-                let (Declaration::Named(true_arm), Declaration::Void) = self.xdr_union_bool_body()
-                else {
-                    panic!(
-                        "xdr_union_bool_body: true arm must be named and false arm must be void!"
-                    );
+                let (Declaration::Named(true_arm), false_arm) = self.xdr_union_bool_body() else {
+                    panic!("xdr_union_bool_body: True arm must not be void!");
                 };
 
-                XdrUnionBody::Bool(XdrUnionBoolBody { true_arm })
+                XdrUnionBody::Bool(XdrUnionBoolBody {
+                    true_arm,
+                    false_arm,
+                })
             }
             // XXX: remove the "Enum" case?
             TokenKind::Enum => {
