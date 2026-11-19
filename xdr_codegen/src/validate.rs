@@ -353,7 +353,15 @@ impl XdrUnionEnumBody {
 
     fn get_size(&mut self, u_name: String, tab: &ValidatedSymbolTable) -> DefinitionSize {
         let Some(discriminant_name) = &self.discriminant else {
-            todo!("we do not currently support void discriminant unions")
+            return DefinitionSize {
+                known: 0,
+                deps: self
+                    .arms
+                    .iter()
+                    .filter_map(|(_, arm)| arm.name())
+                    .map(|name| name.to_string())
+                    .collect(),
+            };
         };
 
         let discriminant = tab.lookup_definition(discriminant_name);

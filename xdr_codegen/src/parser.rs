@@ -267,11 +267,20 @@ impl<'src> Parser<'src> {
         self.expect(TokenKind::LeftParen, "Expected '(' after switch");
         let tok = self.next();
         let body = match &tok.kind {
-            TokenKind::Int => todo!("don't support int unions yet"),
+            TokenKind::Int => {
+                panic!("Only unsigned integers are supported for union discriminants.")
+            }
             TokenKind::Unsigned => {
-                if self.peek().kind == TokenKind::Int {
-                    self.next();
+                match self.peek().kind {
+                    TokenKind::Int => {
+                        self.next();
+                    }
+                    TokenKind::Hyper => {
+                        panic!("64-bit integer is not supported for union discriminant.")
+                    }
+                    _ => {}
                 };
+
                 self.xdr_union_discriminant_remainder();
                 let (arms, default_arm) = self.xdr_union_enum_body();
                 XdrUnionBody::Enum(XdrUnionEnumBody {
