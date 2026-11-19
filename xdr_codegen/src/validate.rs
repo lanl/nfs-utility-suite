@@ -424,8 +424,7 @@ impl XdrUnionEnumBody {
         ValidatedDefinition::Union(ValidatedUnion {
             name: u_name,
             body: ValidatedUnionBody::Enum(ValidatedUnionEnumBody {
-                discriminant: self.discriminant,
-                arms: self.arms,
+                arms: self.resolve_arms(tab),
                 default_arm: self.default_arm,
                 size: DefinitionSize {
                     known,
@@ -437,6 +436,55 @@ impl XdrUnionEnumBody {
                 deps,
             },
         })
+    }
+
+    /// Resolve the identifiers for the union's arms to their integer values. The identifiers will
+    /// either be enum variants if the discriminant is an enum, or constants if the discriminant is
+    /// an int.
+    fn resolve_arms(&self, tab: &ValidatedSymbolTable) -> Vec<ValidatedUnionArm> {
+        self.arms
+            .iter()
+            .map(|arm| {
+                let Value::Name(name) = &arm.0 else {
+                    panic!("Union arms must be identifiers, not numbers.");
+                };
+
+                let val = match &self.discriminant {
+                    Some(enum_name) => {
+                        let ValidatedDefinition::Enum(e) = tab.lookup_definition(enum_name) else {
+                            panic!(
+                                "Using non-enum {enum_name} as union discriminant is not allowed"
+                            );
+                        };
+
+                        e.resolve_value(name, tab)
+                    }
+                    None => tab.lookup_definition(name).as_const(),
+                };
+
+                ValidatedUnionArm {
+                    val,
+                    name: name.to_owned(),
+                    decl: arm.1.clone(),
+                }
+            })
+            .collect()
+    }
+}
+
+impl ValidatedEnum {
+    /// Given the string `name`, look it up in this enum and return its integer value.
+    fn resolve_value(&self, name: &str, tab: &ValidatedSymbolTable) -> u64 {
+        for var in self.variants.iter() {
+            if name == var.0 {
+                return match &var.1 {
+                    Value::Int(i) => *i,
+                    Value::Name(n) => tab.lookup_definition(n).as_const(),
+                };
+            }
+        }
+
+        panic!("Variant {name} does not appear in enum {}", self.name);
     }
 }
 

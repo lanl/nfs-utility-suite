@@ -205,7 +205,7 @@ impl ValidatedDefinition {
         }
     }
 
-    fn as_const(&self) -> u64 {
+    pub fn as_const(&self) -> u64 {
         match self {
             ValidatedDefinition::Const(c) => c.value,
             _ => panic!("not a constant"),
@@ -541,11 +541,10 @@ impl ValidatedUnion {
             ValidatedUnionBody::Enum(e) => {
                 buf.code_block("4usize + match &self", |buf| {
                     for arm in e.arms.iter() {
-                        let name = ValidatedUnionEnumBody::arm_name(&arm.0);
-                        match &arm.1 {
-                            Declaration::Void => buf.add_line(&format!("Self::{name} => 0,")),
+                        match &arm.decl {
+                            Declaration::Void => buf.add_line(&format!("Self::{} => 0,", arm.name)),
                             Declaration::Named(n) => {
-                                buf.code_block(&format!("Self::{name}(_val) =>"), |buf| {
+                                buf.code_block(&format!("Self::{}(_val) =>", arm.name), |buf| {
                                     n.get_width(buf, "_val", tab);
                                 });
                             }
@@ -584,23 +583,14 @@ impl ValidatedUnionBoolBody {
 }
 
 impl ValidatedUnionEnumBody {
-    /// Given a union case value, which can be either an integer or an identifier, return a name
-    /// suitable for a variant in a Rust enum.
-    fn arm_name(val: &Value) -> String {
-        match val {
-            Value::Int(i) => format!("Var{i}"),
-            Value::Name(n) => n.to_string(),
-        }
-    }
     fn definition_enum(&self, name: &str, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         buf.code_block(&format!("pub enum {name}"), |buf| {
             for arm in self.arms.iter() {
-                let name = ValidatedUnionEnumBody::arm_name(&arm.0);
-                match &arm.1 {
-                    Declaration::Void => buf.add_line(&format!("{name},")),
+                match &arm.decl {
+                    Declaration::Void => buf.add_line(&format!("{},", arm.name)),
                     Declaration::Named(n) => {
                         let inner_type = n.as_type_name(tab);
-                        buf.add_line(&format!("{name}({inner_type}),"));
+                        buf.add_line(&format!("{}({inner_type}),", arm.name));
                     }
                 };
             }
@@ -619,7 +609,7 @@ impl ValidatedUnionEnumBody {
     pub(super) fn get_explicit_lifetime(&self, tab: &ValidatedSymbolTable) -> &str {
         let mut explicit_lifetime: &str = "";
         for arm in self.arms.iter() {
-            match &arm.1 {
+            match &arm.decl {
                 Declaration::Void => {}
                 Declaration::Named(n) => {
                     let inner_type = n.as_zcopy_dser_type_name(tab);
@@ -654,19 +644,18 @@ impl ValidatedUnionEnumBody {
         }
         buf.code_block("match self", |buf| {
             for arm in &self.arms {
-                let arm_name = ValidatedUnionEnumBody::arm_name(&arm.0);
-                match &arm.1 {
+                match &arm.decl {
                     Declaration::Void => {
-                        buf.code_block(&format!("Self::{arm_name} => "), |buf| {
-                            max_disc = self
-                                .serialize_discriminant_value(&arm.0, max_disc, buf, tab, alloc);
+                        buf.code_block(&format!("Self::{} => ", arm.name), |buf| {
+                            max_disc =
+                                self.serialize_discriminant_value(arm.val, max_disc, buf, alloc);
                             buf.add_line("// void");
                         });
                     }
                     Declaration::Named(n) => {
-                        buf.code_block(&format!("Self::{arm_name}(inner) => "), |buf| {
-                            max_disc = self
-                                .serialize_discriminant_value(&arm.0, max_disc, buf, tab, alloc);
+                        buf.code_block(&format!("Self::{}(inner) => ", arm.name), |buf| {
+                            max_disc =
+                                self.serialize_discriminant_value(arm.val, max_disc, buf, alloc);
                             if alloc {
                                 n.serialize_inline(Some("inner"), Context::InUnion, buf, tab);
                             } else {
@@ -680,25 +669,13 @@ impl ValidatedUnionEnumBody {
                 match default_arm {
                     Declaration::Void => {
                         buf.code_block("Self::Default => ", |buf| {
-                            let _ = self.serialize_discriminant_value(
-                                &Value::Int(max_disc + 1),
-                                0,
-                                buf,
-                                tab,
-                                alloc,
-                            );
+                            let _ = self.serialize_discriminant_value(max_disc + 1, 0, buf, alloc);
                             buf.add_line("// void");
                         });
                     }
                     Declaration::Named(n) => {
                         buf.code_block("Self::Default(inner) => ", |buf| {
-                            let _ = self.serialize_discriminant_value(
-                                &Value::Int(max_disc + 1),
-                                0,
-                                buf,
-                                tab,
-                                alloc,
-                            );
+                            let _ = self.serialize_discriminant_value(max_disc + 1, 0, buf, alloc);
                             if alloc {
                                 n.serialize_inline(Some("inner"), Context::InUnion, buf, tab);
                             } else {
@@ -714,8 +691,7 @@ impl ValidatedUnionEnumBody {
         }
     }
 
-    /// Get the value of `val` as a u64, and then write the code to serialize it according to
-    /// `alloc`.
+    /// Write the code to serialize `disc`according to `alloc`.
     ///
     /// Compare it to `max_disc` and return the larger of the two. This is to serialize default
     /// arms: they should use a discriminant value that doesn't get used for another arm.
@@ -724,13 +700,11 @@ impl ValidatedUnionEnumBody {
     /// as an Enum variant because the XDR spec requires Enum variants be encoded as signed ints.
     fn serialize_discriminant_value(
         &self,
-        val: &Value,
+        disc: u64,
         max_disc: u64,
         buf: &mut CodeBuf,
-        tab: &ValidatedSymbolTable,
         alloc: bool,
     ) -> u64 {
-        let disc = self.get_discriminant_value(val, tab);
         if alloc {
             let disc: i32 = disc.try_into().unwrap();
             buf.add_line(&format!(
@@ -747,35 +721,15 @@ impl ValidatedUnionEnumBody {
         }
     }
     fn default_enum(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
-        let (value, declaration) = &self.arms[0];
-        let name = match &value {
-            Value::Int(i) => format!("Var{i}"),
-            Value::Name(n) => n.to_string(),
-        };
-        match declaration {
-            Declaration::Void => buf.add_line(&format!("Self::{name}")),
+        let arm = &self.arms[0];
+
+        match &arm.decl {
+            Declaration::Void => buf.add_line(&format!("Self::{}", arm.name)),
             Declaration::Named(d) => {
                 let inner_default = d.default_value(tab);
-                buf.add_line(&format!("Self::{name}({inner_default})"));
+                buf.add_line(&format!("Self::{}({inner_default})", arm.name));
             }
         };
-    }
-
-    /// Given the value `val`, convert it into its integer value for encoding. If `val` is already
-    /// an int, use that, otherwise if it's a string, look it up in the discriminant enum.
-    fn get_discriminant_value(&self, val: &Value, tab: &ValidatedSymbolTable) -> u64 {
-        match val {
-            Value::Int(i) => *i,
-            Value::Name(n) => {
-                let Some(ref disc) = self.discriminant else {
-                    panic!("BUG: attempt to use enum-style union without a discriminant");
-                };
-                let ValidatedDefinition::Enum(ref e) = *tab.lookup_definition(disc) else {
-                    panic!("Using non-enum {n} as union discriminant is not allowed");
-                };
-                e.lookup_value(n, tab).unwrap()
-            }
-        }
     }
 }
 
@@ -974,22 +928,6 @@ impl ValidatedEnum {
                 buf.add_line(&format!("{},", var.0));
             }
         });
-    }
-    /// Given the string `name`, look it up in this enum and return its integer value.
-    ///
-    /// Returns None if `name` does not appear as a variant in this enum, and returns Err(_) if the
-    /// value of `name` exists but is unresolvable.
-    fn lookup_value(&self, name: &str, tab: &ValidatedSymbolTable) -> Option<u64> {
-        for var in self.variants.iter() {
-            if name == var.0 {
-                return match &var.1 {
-                    Value::Int(i) => Some(*i),
-                    Value::Name(n) => Some(tab.lookup_definition(n).as_const()),
-                };
-            }
-        }
-
-        None
     }
 }
 

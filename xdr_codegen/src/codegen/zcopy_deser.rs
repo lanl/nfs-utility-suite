@@ -923,12 +923,11 @@ impl ValidatedUnionEnumBody {
         let mut arms_translated: Vec<String> = Vec::new();
         let mut explicit_lifetime: &str = "";
         for arm in self.arms.iter() {
-            let name = ValidatedUnionEnumBody::arm_name(&arm.0);
-            match &arm.1 {
-                Declaration::Void => arms_translated.push(format!("{name},")),
+            match &arm.decl {
+                Declaration::Void => arms_translated.push(format!("{},", arm.name)),
                 Declaration::Named(n) => {
                     let inner_type = n.as_zcopy_dser_type_name(tab);
-                    arms_translated.push(format!("{name}({inner_type}),"));
+                    arms_translated.push(format!("{}({inner_type}),", arm.name));
 
                     if inner_type.contains("<'a>") {
                         explicit_lifetime = "<'a>";
@@ -978,12 +977,10 @@ impl ValidatedUnionEnumBody {
         buf.add_line("let discriminant = xdr_lib::get_i32_infallible(_input);");
         buf.code_block("match discriminant", |buf| {
             for arm in self.arms.iter() {
-                let discriminant_value = self.get_discriminant_value(&arm.0, tab);
-                buf.code_block(&format!("{discriminant_value} => "), |buf| {
-                    let arm_name = ValidatedUnionEnumBody::arm_name(&arm.0);
-                    match &arm.1 {
+                buf.code_block(&format!("{} => ", arm.val), |buf| {
+                    match &arm.decl {
                         Declaration::Void => {
-                            buf.add_line(&format!("{u_name}::{arm_name}"));
+                            buf.add_line(&format!("{u_name}::{}", arm.name));
                         }
                         Declaration::Named(n) => {
                             buf.add_line("let off = off + 4;");
@@ -1005,7 +1002,7 @@ impl ValidatedUnionEnumBody {
                                 n.deserialize_inline_zcopy(buf, tab, true, None, false);
                             });
 
-                            buf.add_line(&format!("{u_name}::{arm_name}(inner)"));
+                            buf.add_line(&format!("{u_name}::{}(inner)", arm.name));
                         }
                     };
                 });
@@ -1052,15 +1049,14 @@ impl ValidatedUnionEnumBody {
         buf.code_block("Ok(4usize + match &self.inner", |buf| {
             for arm in self.arms.iter() {
                 // let discriminant_value = self.get_discriminant_value(&arm.0, tab);
-                let arm_name = ValidatedUnionEnumBody::arm_name(&arm.0);
-                match &arm.1 {
+                match &arm.decl {
                     Declaration::Void => {
-                        buf.code_block(&format!("{}Ret::{} => ", u_name, arm_name), |buf| {
+                        buf.code_block(&format!("{}Ret::{} => ", u_name, arm.name), |buf| {
                             buf.add_line("Ok(0)");
                         });
                     }
                     Declaration::Named(n) => {
-                        buf.code_block(&format!("{}Ret::{}(_val) => ", u_name, arm_name), |buf| {
+                        buf.code_block(&format!("{}Ret::{}(_val) => ", u_name, arm.name), |buf| {
                             if let Some(width) = n.size(tab) {
                                 buf.add_line(&format!("Ok({})", width));
                             } else {

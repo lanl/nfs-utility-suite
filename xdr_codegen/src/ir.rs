@@ -1,4 +1,4 @@
-use crate::ast::{ConstDefinition, DefaultUnionArm, NamedDeclaration, UnionArm, Value, XdrTypeDef};
+use crate::ast::*;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct DefinitionSize {
@@ -22,9 +22,6 @@ pub enum ValidatedDefinition {
     Enum(ValidatedEnum),
     Union(ValidatedUnion),
 }
-
-/// For strings that are not used for their own value, but to resolve to another type.
-pub type UnresolvedName = String;
 
 /// "Enumerations have the same representation as signed integers."
 #[derive(Debug, PartialEq, Clone)]
@@ -80,8 +77,14 @@ pub struct ValidatedUnionBoolBody {
 /// right integer value.
 #[derive(Debug, PartialEq, Clone)]
 pub struct ValidatedUnionEnumBody {
-    pub discriminant: Option<UnresolvedName>,
-    pub arms: Vec<UnionArm>,
-    pub default_arm: DefaultUnionArm,
+    pub arms: Vec<ValidatedUnionArm>,
+    pub default_arm: Option<Declaration>,
     pub size: DefinitionSize,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct ValidatedUnionArm {
+    pub val: u64,
+    pub name: String,
+    pub decl: Declaration,
 }

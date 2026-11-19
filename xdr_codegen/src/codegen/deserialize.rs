@@ -150,16 +150,14 @@ impl ValidatedUnionEnumBody {
         buf.add_line("let (discriminant, input) = xdr_lib::get_i32(input)?;");
         buf.code_block("match discriminant", |buf| {
             for arm in self.arms.iter() {
-                let discriminant_value = self.get_discriminant_value(&arm.0, tab);
-                buf.code_block(&format!("{discriminant_value} => "), |buf| {
-                    let arm_name = ValidatedUnionEnumBody::arm_name(&arm.0);
-                    match &arm.1 {
+                buf.code_block(&format!("{} => ", arm.val), |buf| {
+                    match &arm.decl {
                         Declaration::Void => {
-                            buf.add_line(&format!("Ok((Self::{arm_name}, input))"));
+                            buf.add_line(&format!("Ok((Self::{}, input))", arm.name));
                         }
                         Declaration::Named(n) => {
                             n.deserialize_inline(Some("inner"), buf, tab);
-                            buf.add_line(&format!("Ok((Self::{arm_name}(inner), input))"));
+                            buf.add_line(&format!("Ok((Self::{}(inner), input))", arm.name));
                         }
                     };
                 });
