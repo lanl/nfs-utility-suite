@@ -334,6 +334,24 @@ impl XdrUnionBoolBody {
 
 impl XdrUnionEnumBody {
     fn validate(mut self, u_name: String, tab: &ValidatedSymbolTable) -> ValidatedDefinition {
+        let size = self.get_size(u_name.clone(), tab);
+        let overall_size = DefinitionSize {
+            known: size.known + 4,
+            deps: size.deps.clone(),
+        };
+
+        ValidatedDefinition::Union(ValidatedUnion {
+            name: u_name,
+            body: ValidatedUnionBody::Enum(ValidatedUnionEnumBody {
+                arms: self.resolve_arms(tab),
+                default_arm: self.default_arm,
+                size: size.clone(),
+            }),
+            size: overall_size,
+        })
+    }
+
+    fn get_size(&mut self, u_name: String, tab: &ValidatedSymbolTable) -> DefinitionSize {
         let Some(discriminant_name) = &self.discriminant else {
             todo!("we do not currently support void discriminant unions")
         };
@@ -414,28 +432,13 @@ impl XdrUnionEnumBody {
                 0,
                 self.arms
                     .iter()
-                    .map(|(_, arm)| arm)
-                    .filter_map(|arm| arm.name())
+                    .filter_map(|(_, arm)| arm.name())
                     .map(|name| name.to_string())
                     .collect(),
             )
         };
 
-        ValidatedDefinition::Union(ValidatedUnion {
-            name: u_name,
-            body: ValidatedUnionBody::Enum(ValidatedUnionEnumBody {
-                arms: self.resolve_arms(tab),
-                default_arm: self.default_arm,
-                size: DefinitionSize {
-                    known,
-                    deps: deps.clone(),
-                },
-            }),
-            size: DefinitionSize {
-                known: known + 4,
-                deps,
-            },
-        })
+        DefinitionSize { known, deps }
     }
 
     /// Resolve the identifiers for the union's arms to their integer values. The identifiers will
