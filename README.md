@@ -281,8 +281,6 @@ pub struct MyOption {
 </tr>
 </table>
 
-When the discriminant is a bool, this library requires the `False` arm to be `void`.
-
 Enum-discriminated unions are represented as Rust `enum`s:
 <table>
 <tr>
@@ -330,10 +328,9 @@ pub enum Things {
 Note that when the union has a default arm, that is represented by `Default` enum variant in Rust,
 which should be distinguished from the `default()` method on the enum!
 
-The XDR spec allows for int-discriminated enums, which are effectively equivalent to enum-discriminated
-unions in terms of their encoding. The only difference is whether the arms are given meaningful names or not.
-Int-discriminated unions do not appear to be used in practice, so this library does not support them.
-
+When using an integer as the union discriminant, this library has two additional requirements:
+- The integer must be unsigned 32-bit.
+- The arm names must be constants, not bare integer values (e.g., `const VAL = 1;`).
 #### Naming Conventions
 
 XDR normally uses snake_case for type names, while Rust uses CamelCase. This library makes no
