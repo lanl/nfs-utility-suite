@@ -508,6 +508,10 @@ impl XdrUnionEnumBody {
                     None => tab.lookup_definition(name).as_const(),
                 };
 
+                let val: u32 = val.try_into().expect(
+                    "Constant value greater than u32::MAX is illegal for union discriminant.",
+                );
+
                 ValidatedUnionArm {
                     val,
                     name: name.to_owned(),

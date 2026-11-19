@@ -244,8 +244,16 @@ impl XdrType {
 impl CodeBuf {
     /// Write into `self` the code to serialize a signed integer `val`.
     pub(super) fn serialize_int(&mut self, val: i32) {
+        self.serialize_val(format!("{val}_i32"));
+    }
+
+    pub(super) fn serialize_uint(&mut self, val: u32) {
+        self.serialize_val(format!("{val}_u32"));
+    }
+
+    fn serialize_val(&mut self, val: String) {
         self.add_line(&format!(
-            "buf[offset..offset + 4].copy_from_slice(&{val}_i32.to_be_bytes());"
+            "buf[offset..offset + 4].copy_from_slice(&{val}.to_be_bytes());"
         ));
         self.add_line("offset += 4;");
     }

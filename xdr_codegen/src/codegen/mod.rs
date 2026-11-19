@@ -691,27 +691,23 @@ impl ValidatedUnionEnumBody {
         }
     }
 
-    /// Write the code to serialize `disc`according to `alloc`.
+    /// Write the code to serialize `disc` according to `alloc`.
     ///
     /// Compare it to `max_disc` and return the larger of the two. This is to serialize default
     /// arms: they should use a discriminant value that doesn't get used for another arm.
-    ///
-    /// Panics if `val` won't fit into an `i32` -- it is an error to try to use such a large value
-    /// as an Enum variant because the XDR spec requires Enum variants be encoded as signed ints.
     fn serialize_discriminant_value(
         &self,
-        disc: u64,
-        max_disc: u64,
+        disc: u32,
+        max_disc: u32,
         buf: &mut CodeBuf,
         alloc: bool,
-    ) -> u64 {
+    ) -> u32 {
         if alloc {
-            let disc: i32 = disc.try_into().unwrap();
             buf.add_line(&format!(
-                "buf.extend_from_slice(&{disc}_i32.to_be_bytes());"
+                "buf.extend_from_slice(&{disc}_u32.to_be_bytes());"
             ));
         } else {
-            buf.serialize_int(disc.try_into().unwrap());
+            buf.serialize_uint(disc);
         }
 
         if disc > max_disc {
@@ -720,6 +716,7 @@ impl ValidatedUnionEnumBody {
             max_disc
         }
     }
+
     fn default_enum(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         let arm = &self.arms[0];
 

@@ -84,7 +84,7 @@ pub struct ValidatedUnionEnumBody {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct ValidatedUnionArm {
-    pub val: u64,
+    pub val: u32,
     pub name: String,
     pub decl: Declaration,
 }

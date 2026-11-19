@@ -147,7 +147,11 @@ impl ValidatedUnionBoolBody {
 
 impl ValidatedUnionEnumBody {
     pub(super) fn deserialize_enum(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
-        buf.add_line("let (discriminant, input) = xdr_lib::get_i32(input)?;");
+        // While enums are represented as i32s, in practice this implementation requires them to be
+        // negative. At the same time, integer-discriminated unions may have an "unsigned int"
+        // discriminant which can in theory hold values > i32::MAX. Using get_u32() supports both
+        // of these.
+        buf.add_line("let (discriminant, input) = xdr_lib::get_u32(input)?;");
         buf.code_block("match discriminant", |buf| {
             for arm in self.arms.iter() {
                 buf.code_block(&format!("{} => ", arm.val), |buf| {
