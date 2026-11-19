@@ -23,7 +23,6 @@ log = "0.4.27"
 nix = { version = "0.30.1", features = ["socket"] }
 rpc_protocol = { path = "../rpc_protocol" }
 xdr_lib = { path = "../xdr_lib" }
-serde = { version = "1.0.228", features = ["derive"] }
 
 [build-dependencies]
 xdr_codegen = { path = "../xdr_codegen" }

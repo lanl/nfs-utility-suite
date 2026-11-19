@@ -768,7 +768,6 @@ dependencies = [
  "log",
  "nix",
  "rpc_protocol",
- "serde",
  "xdr_codegen",
  "xdr_lib",
 ]
