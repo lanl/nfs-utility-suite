@@ -512,35 +512,36 @@ impl ValidatedUnion {
         derive_serialize: bool,
     ) {
         buf.type_header(debug, derive_serialize);
-        match &self.body {
-            ValidatedUnionBody::Bool(b) => b.definition_bool(&self.name, buf, tab),
-            ValidatedUnionBody::Enum(e) => e.definition_enum(&self.name, buf, tab),
-        };
+        if self.is_option() {
+            self.definition_bool(&self.name, buf, tab);
+        } else {
+            self.definition_enum(&self.name, buf, tab);
+        }
     }
 
     fn default(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         buf.code_block(&format!("impl Default for {}", self.name), |buf| {
-            buf.code_block("fn default() -> Self", |buf| match &self.body {
-                ValidatedUnionBody::Bool(b) => b.default_bool(buf),
-                ValidatedUnionBody::Enum(e) => e.default_enum(buf, tab),
-            })
+            buf.code_block("fn default() -> Self", |buf| {
+                if self.is_option() {
+                    self.default_bool(buf)
+                } else {
+                    self.default_enum(buf, tab)
+                }
+            });
         });
     }
     fn width_getter(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
-        buf.code_block("pub fn get_width(&self) -> usize", |buf| match &self.body {
-            ValidatedUnionBody::Bool(validated_union_bool_body) => {
+        buf.code_block("pub fn get_width(&self) -> usize", |buf| {
+            if self.is_option() {
                 buf.code_block("4usize + match &self.inner", |buf| {
                     buf.add_line("None => 0,");
                     buf.code_block("Some(_val) =>", |buf| {
-                        validated_union_bool_body
-                            .true_arm
-                            .get_width(buf, "_val", tab);
+                        self.true_arm().get_width(buf, "_val", tab);
                     });
                 })
-            }
-            ValidatedUnionBody::Enum(e) => {
+            } else {
                 buf.code_block("4usize + match &self", |buf| {
-                    for arm in e.arms() {
+                    for arm in self.arms() {
                         match &arm.decl {
                             Declaration::Void => buf.add_line(&format!("Self::{} => 0,", arm.name)),
                             Declaration::Named(n) => {
@@ -554,13 +555,11 @@ impl ValidatedUnion {
             }
         });
     }
-}
 
-impl ValidatedUnionBoolBody {
     fn definition_bool(&self, name: &str, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         // XXX: A Bool union nearly always has Void for the false arm.
         // Until I see an example where this is not the case, express it as an Option.
-        let inner_type = self.true_arm.as_type_name(tab);
+        let inner_type = self.true_arm().as_type_name(tab);
 
         buf.code_block(&format!("pub struct {name}"), |buf| {
             buf.add_line(&format!("pub inner: Option<{inner_type}>,"));
@@ -571,9 +570,6 @@ impl ValidatedUnionBoolBody {
             buf.add_line("inner: None,");
         });
     }
-}
-
-impl ValidatedUnionEnumBody {
     fn definition_enum(&self, name: &str, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         buf.code_block(&format!("pub enum {name}"), |buf| {
             for arm in self.arms() {

@@ -758,19 +758,18 @@ impl ValidatedUnion {
     }
 
     pub(super) fn get_type_zcopy(&self, tab: &ValidatedSymbolTable) -> String {
-        match &self.body {
-            ValidatedUnionBody::Bool(body) => format!(
+        if self.is_option() {
+            format!(
                 "Option<{}>",
-                match &body.true_arm.kind {
+                match &self.true_arm().kind {
                     DeclarationKind::Scalar(xdr_type) | DeclarationKind::Optional(xdr_type) => {
                         xdr_type.as_zcopy_deser_type_name(tab)
                     }
                     DeclarationKind::Array(array) => array.as_zcopy_deser_type_name(tab),
                 }
-            ),
-            ValidatedUnionBody::Enum(body) => {
-                format!("{}Ret{}", self.name, body.get_explicit_lifetime(tab))
-            }
+            )
+        } else {
+            format!("{}Ret{}", self.name, self.get_explicit_lifetime(tab))
         }
     }
 
@@ -783,18 +782,15 @@ impl ValidatedUnion {
                     |buf| {
                         buf.add_line("let off = 0;");
                         buf.add_line("let _input = unsafe { buf.get_unchecked(off..) };");
-                        match &self.body {
-                            ValidatedUnionBody::Bool(b) => {
-                                buf.block_statement("let inner = ", |buf| {
-                                    b.deserialize_bool_zcopy(buf, tab);
-                                });
-                            }
-                            ValidatedUnionBody::Enum(b) => {
-                                buf.block_statement("let inner = ", |buf| {
-                                    b.deserialize_enum_zcopy(&self.get_type_zcopy(tab), buf, tab);
-                                });
-                            }
-                        }
+                        if self.is_option() {
+                            buf.block_statement("let inner = ", |buf| {
+                                self.deserialize_bool_zcopy(buf, tab);
+                            })
+                        } else {
+                            buf.block_statement("let inner = ", |buf| {
+                                self.deserialize_enum_zcopy(&self.get_type_zcopy(tab), buf, tab);
+                            })
+                        };
                         buf.add_line("let me = Self{ buf,inner };");
                         buf.add_line("let required = me.get_width()?;");
                         buf.code_block("if required > me.buf.len()", |buf| {
@@ -807,13 +803,10 @@ impl ValidatedUnion {
                 buf.code_block("fn get_width(&self) -> xdr_lib::Result<usize>", |buf| {
                     buf.add_line("let off = 0usize;");
                     buf.add_line("let _input = unsafe { self.buf.get_unchecked(off..) };");
-                    match &self.body {
-                        ValidatedUnionBody::Bool(b) => {
-                            b.get_size_inline_bool_zcopy(buf, tab, true, None)
-                        }
-                        ValidatedUnionBody::Enum(e) => {
-                            e.get_size_inline_enum_zcopy(&self.name, buf, tab);
-                        }
+                    if self.is_option() {
+                        self.get_size_inline_bool_zcopy(buf, tab, true, None)
+                    } else {
+                        self.get_size_inline_enum_zcopy(&self.name, buf, tab)
                     };
                 });
             },
@@ -829,14 +822,13 @@ impl ValidatedUnion {
             );
         });
 
-        match &self.body {
-            ValidatedUnionBody::Bool(b) => b.definition_bool_zcopy(&self.name, buf, tab),
-            ValidatedUnionBody::Enum(e) => e.definition_enum_zcopy(&self.name, buf, tab),
+        if self.is_option() {
+            self.definition_bool_zcopy(&self.name, buf, tab)
+        } else {
+            self.definition_enum_zcopy(&self.name, buf, tab)
         };
     }
-}
 
-impl ValidatedUnionBoolBody {
     pub(super) fn definition_bool_zcopy(
         &self,
         name: &str,
@@ -845,7 +837,7 @@ impl ValidatedUnionBoolBody {
     ) {
         // XXX: A Bool union nearly always has Void for the false arm.
         // Until I see an example where this is not the case, express it as an Option.
-        let inner_type = self.true_arm.as_zcopy_dser_type_name(tab);
+        let inner_type = self.true_arm().as_zcopy_dser_type_name(tab);
         buf.add_line("#[derive(Debug, PartialEq, Clone)]");
         buf.code_block(&format!("pub struct {name}Reader <'a>"), |buf| {
             buf.add_line("buf: &'a [u8],");
@@ -863,7 +855,7 @@ impl ValidatedUnionBoolBody {
                     buf.add_line("let off = off + 4;");
                     buf.add_line("let _input = unsafe { buf.get_unchecked(off..) };");
 
-                    let size = self.true_arm.size(tab);
+                    let size = self.true_arm().size(tab);
                     if let Some(size) = size {
                         buf.add_line(&format!(
                             "if _input.len() < {} {{ return Err(xdr_lib::DeserializeError) }}",
@@ -872,7 +864,7 @@ impl ValidatedUnionBoolBody {
                     }
 
                     // TODO: suport recursive optionals in unions if the need arises
-                    self.true_arm
+                    self.true_arm()
                         .deserialize_inline_zcopy(buf, tab, true, None, false)
                 });
                 buf.add_line("Some(val)");
@@ -895,20 +887,18 @@ impl ValidatedUnionBoolBody {
         buf.block_with_trailer("Ok(4usize + match &self.inner", "?)", |buf| {
             buf.add_line("None => Ok(0),");
             buf.code_block("Some(_inner) =>", |buf| {
-                if let Some(static_size) = self.true_arm.size(tab) {
+                if let Some(static_size) = self.true_arm().size(tab) {
                     buf.add_line(&format!("Ok({})", static_size));
-                } else if self.true_arm.is_varlen_reader(tab) {
+                } else if self.true_arm().is_varlen_reader(tab) {
                     buf.add_line("_inner.get_width()");
                 } else {
-                    self.true_arm
+                    self.true_arm()
                         .get_size_inline_zcopy(buf, tab, true, None, false);
                 }
             });
         });
     }
-}
 
-impl ValidatedUnionEnumBody {
     pub(super) fn definition_enum_zcopy(
         &self,
         name: &str,

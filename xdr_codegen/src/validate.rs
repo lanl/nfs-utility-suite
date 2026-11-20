@@ -338,22 +338,29 @@ impl XdrUnionBoolBody {
             return self.validate_nonvoid_false_arm(u_name);
         }
 
-        let arm_names = vec![self.true_arm.name.clone()];
-
+        let arms = vec![
+            ValidatedUnionArm {
+                val: 1,
+                default: false,
+                name: "True".to_owned(),
+                decl: Declaration::Named(self.true_arm),
+            },
+            ValidatedUnionArm {
+                val: 0,
+                default: false,
+                name: "False".to_owned(),
+                decl: Declaration::Void,
+            },
+        ];
         // bool union body size is never known as there is always a void member and a non void
         // member
         ValidatedDefinition::Union(ValidatedUnion {
             name: u_name,
-            body: ValidatedUnionBody::Bool(ValidatedUnionBoolBody {
-                true_arm: self.true_arm,
-                size: DefinitionSize {
-                    known: 0,
-                    deps: arm_names.clone(),
-                },
-            }),
+            arms,
+            default_arm: None,
             size: DefinitionSize {
                 known: 4,
-                deps: arm_names,
+                deps: vec!["True".to_owned()],
             },
         })
     }
@@ -375,18 +382,10 @@ impl XdrUnionBoolBody {
         ];
         let deps = vec!["True".to_owned(), "False".to_owned()];
 
-        let body = ValidatedUnionBody::Enum(ValidatedUnionEnumBody {
-            arms,
-            default_arm: None,
-            size: DefinitionSize {
-                known: 0,
-                deps: deps.clone(),
-            },
-        });
-
         ValidatedDefinition::Union(ValidatedUnion {
             name: u_name,
-            body,
+            arms,
+            default_arm: None,
             size: DefinitionSize { known: 4, deps },
         })
     }
@@ -422,11 +421,8 @@ impl XdrUnionEnumBody {
 
         ValidatedDefinition::Union(ValidatedUnion {
             name: u_name,
-            body: ValidatedUnionBody::Enum(ValidatedUnionEnumBody {
-                arms,
-                default_arm,
-                size,
-            }),
+            arms,
+            default_arm,
             size: overall_size,
         })
     }

@@ -115,15 +115,14 @@ impl NamedDeclaration {
 impl ValidatedUnion {
     pub(super) fn deserialize_definition(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         buf.code_block(DESERIALIZE_SIGNATURE, |buf| {
-            match &self.body {
-                ValidatedUnionBody::Bool(b) => b.deserialize_bool(buf, tab),
-                ValidatedUnionBody::Enum(e) => e.deserialize_enum(buf, tab),
+            if self.is_option() {
+                self.deserialize_bool(buf, tab);
+            } else {
+                self.deserialize_enum(buf, tab);
             };
         });
     }
-}
 
-impl ValidatedUnionBoolBody {
     pub(super) fn deserialize_bool(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         buf.add_line("let (discriminant, input) = xdr_lib::get_bool(input)?;");
         buf.code_block("match discriminant", |buf| {
@@ -134,7 +133,7 @@ impl ValidatedUnionBoolBody {
                 buf.add_line("Ok((new, input))");
             });
             buf.code_block("true => ", |buf| {
-                self.true_arm.deserialize_inline(Some("val"), buf, tab);
+                self.true_arm().deserialize_inline(Some("val"), buf, tab);
                 buf.block_statement("let new = Self", |buf| {
                     buf.add_line("inner: Some(val),");
                 });
@@ -143,9 +142,6 @@ impl ValidatedUnionBoolBody {
             });
         });
     }
-}
-
-impl ValidatedUnionEnumBody {
     pub(super) fn deserialize_enum(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         // While enums are represented as i32s, in practice this implementation requires them to be
         // negative. At the same time, integer-discriminated unions may have an "unsigned int"
