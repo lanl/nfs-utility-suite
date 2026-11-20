@@ -87,22 +87,20 @@ impl NamedDeclaration {
 
 impl ValidatedUnion {
     pub(super) fn serialize_definition(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
-        buf.code_block(
-            "pub fn serialize_alloc(&self) -> Vec<u8>",
-            |buf| match &self.body {
-                ValidatedUnionBody::Bool(b) => b.serialize_bool(buf, tab),
-                ValidatedUnionBody::Enum(e) => e.serialize_enum(buf, tab, true),
-            },
-        );
+        buf.code_block("pub fn serialize_alloc(&self) -> Vec<u8>", |buf| {
+            if self.is_option() {
+                self.serialize_bool(buf, tab);
+            } else {
+                self.serialize_enum(buf, tab, true);
+            };
+        });
     }
-}
 
-impl ValidatedUnionBoolBody {
     fn serialize_bool(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         buf.code_block("match &self.inner", |buf| {
             buf.code_block("Some(val) => ", |buf| {
                 buf.add_line("let mut buf = 1_u32.to_be_bytes().to_vec();");
-                self.true_arm
+                self.true_arm()
                     .serialize_inline(Some("val"), Context::InUnion, buf, tab);
                 buf.add_line("buf");
             });
@@ -125,12 +123,11 @@ impl ValidatedStruct {
 }
 
 impl ValidatedEnum {
-    pub(super) fn serialize_definition(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
+    pub(super) fn serialize_definition(&self, buf: &mut CodeBuf) {
         buf.code_block("pub fn serialize_alloc(&self) -> Vec<u8>", |buf| {
             buf.block_statement("let val: i32 = match self", |buf| {
                 for variant in self.variants.iter() {
-                    let val = variant.1.as_const(tab);
-                    buf.add_line(&format!("{}::{} => {},", self.name, variant.0, val));
+                    buf.add_line(&format!("{}::{} => {},", self.name, variant.0, variant.1));
                 }
             });
             buf.add_line("val.to_be_bytes().to_vec()");

@@ -136,3 +136,19 @@ case three:
 default:
 	int d;
 };
+
+const VAL1 = 1;
+const VAL2 = 2;
+union IntDiscriminant switch (unsigned int disc) {
+case VAL1:
+	int a;
+case VAL2:
+	int b;
+};
+
+union NonVoidBool switch (bool blah) {
+case TRUE:
+        int a;
+case FALSE:
+        hyper b;
+};

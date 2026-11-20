@@ -79,6 +79,12 @@ fn main() {
 The primitive types translate from XDR to Rust in the predictable way, e.g., `int => i32`
 `unsigned hyper => u64`, etc.
 
+
+> [!Warning]
+> The XDR specification allows for floats and doubles.
+> This implementation does not support these because they are not used in any
+> of the specifications supported by this codebase (nfs3, nfs4, rpc, etc.).
+
 #### Arrays
 
 XDR Arrays are encoded as Rust arrays (for fixed-length arrays) or Vectors (for variable length
@@ -246,6 +252,13 @@ pub enum Cases {
 </tr>
 </table>
 
+> [!WARNING]
+> The XDR specification states that enumerations are represented as signed integers.
+> This implementation only supports non-negative integer constants,
+> and will not parse or compile any input that contains negative integers.
+> As such, this implementation effectively limits enumeration values to [0, i32::MAX].
+> This is acceptable because all of the protocols this application supports (rpc, nfs3, nfs4, etc.)
+> fall within this limitation.
 
 #### Unions
 
@@ -280,8 +293,6 @@ pub struct MyOption {
 </td>
 </tr>
 </table>
-
-When the discriminant is a bool, this library requires the `False` arm to be `void`.
 
 Enum-discriminated unions are represented as Rust `enum`s:
 <table>
@@ -330,10 +341,9 @@ pub enum Things {
 Note that when the union has a default arm, that is represented by `Default` enum variant in Rust,
 which should be distinguished from the `default()` method on the enum!
 
-The XDR spec allows for int-discriminated enums, which are effectively equivalent to enum-discriminated
-unions in terms of their encoding. The only difference is whether the arms are given meaningful names or not.
-Int-discriminated unions do not appear to be used in practice, so this library does not support them.
-
+When using an integer as the union discriminant, this library has two additional requirements:
+- The integer must be unsigned 32-bit.
+- The arm names must be constants, not bare integer values (e.g., `const VAL = 1;`).
 #### Naming Conventions
 
 XDR normally uses snake_case for type names, while Rust uses CamelCase. This library makes no

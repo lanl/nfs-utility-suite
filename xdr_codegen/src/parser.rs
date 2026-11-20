@@ -267,11 +267,20 @@ impl<'src> Parser<'src> {
         self.expect(TokenKind::LeftParen, "Expected '(' after switch");
         let tok = self.next();
         let body = match &tok.kind {
-            TokenKind::Int => todo!("don't support int unions yet"),
+            TokenKind::Int => {
+                panic!("Only unsigned integers are supported for union discriminants.")
+            }
             TokenKind::Unsigned => {
-                if self.peek().kind == TokenKind::Int {
-                    self.next();
+                match self.peek().kind {
+                    TokenKind::Int => {
+                        self.next();
+                    }
+                    TokenKind::Hyper => {
+                        panic!("64-bit integer is not supported for union discriminant.")
+                    }
+                    _ => {}
                 };
+
                 self.xdr_union_discriminant_remainder();
                 let (arms, default_arm) = self.xdr_union_enum_body();
                 XdrUnionBody::Enum(XdrUnionEnumBody {
@@ -292,14 +301,14 @@ impl<'src> Parser<'src> {
             }
             TokenKind::Bool => {
                 self.xdr_union_discriminant_remainder();
-                let (Declaration::Named(true_arm), Declaration::Void) = self.xdr_union_bool_body()
-                else {
-                    panic!(
-                        "xdr_union_bool_body: true arm must be named and false arm must be void!"
-                    );
+                let (Declaration::Named(true_arm), false_arm) = self.xdr_union_bool_body() else {
+                    panic!("xdr_union_bool_body: True arm must not be void!");
                 };
 
-                XdrUnionBody::Bool(XdrUnionBoolBody { true_arm })
+                XdrUnionBody::Bool(XdrUnionBoolBody {
+                    true_arm,
+                    false_arm,
+                })
             }
             // XXX: remove the "Enum" case?
             TokenKind::Enum => {

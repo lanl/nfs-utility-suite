@@ -36,21 +36,20 @@ impl ValidatedUnion {
         buf.add_line("#[inline(always)]");
         buf.code_block("pub fn serialize(&self, buf: &mut [u8]) -> usize", |buf| {
             buf.add_line("let mut offset = 0;");
-            match &self.body {
-                ValidatedUnionBody::Bool(b) => b.serialize_no_alloc(buf, tab),
-                ValidatedUnionBody::Enum(b) => b.serialize_enum(buf, tab, false),
+            if self.is_option() {
+                self.serialize_no_alloc_bool(buf, tab)
+            } else {
+                self.serialize_enum(buf, tab, false)
             };
             buf.add_line("offset");
         });
     }
-}
 
-impl ValidatedUnionBoolBody {
-    fn serialize_no_alloc(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
+    fn serialize_no_alloc_bool(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         buf.code_block("match &self.inner", |buf| {
             buf.code_block("Some(val) => ", |buf| {
                 buf.serialize_int(1);
-                self.true_arm
+                self.true_arm()
                     .serialize_no_alloc_inline(Some("val"), buf, tab);
             });
             buf.code_block("None => ", |buf| buf.serialize_int(0));
@@ -59,14 +58,13 @@ impl ValidatedUnionBoolBody {
 }
 
 impl ValidatedEnum {
-    pub(super) fn serialize_no_alloc(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
+    pub(super) fn serialize_no_alloc(&self, buf: &mut CodeBuf) {
         buf.add_line("#[inline(always)]");
         buf.code_block("pub fn serialize(&self, buf: &mut [u8]) -> usize", |buf| {
             buf.add_line("let mut offset = 0;");
             buf.block_statement("let val: i32 = match self", |buf| {
                 for variant in self.variants.iter() {
-                    let val = variant.1.as_const(tab);
-                    buf.add_line(&format!("{}::{} => {},", self.name, variant.0, val));
+                    buf.add_line(&format!("{}::{} => {},", self.name, variant.0, variant.1));
                 }
             });
             buf.add_line("buf[offset..offset + 4].copy_from_slice(&val.to_be_bytes());");
@@ -244,8 +242,16 @@ impl XdrType {
 impl CodeBuf {
     /// Write into `self` the code to serialize a signed integer `val`.
     pub(super) fn serialize_int(&mut self, val: i32) {
+        self.serialize_val(format!("{val}_i32"));
+    }
+
+    pub(super) fn serialize_uint(&mut self, val: u32) {
+        self.serialize_val(format!("{val}_u32"));
+    }
+
+    fn serialize_val(&mut self, val: String) {
         self.add_line(&format!(
-            "buf[offset..offset + 4].copy_from_slice(&{val}_i32.to_be_bytes());"
+            "buf[offset..offset + 4].copy_from_slice(&{val}.to_be_bytes());"
         ));
         self.add_line("offset += 4;");
     }

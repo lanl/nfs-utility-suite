@@ -115,15 +115,14 @@ impl NamedDeclaration {
 impl ValidatedUnion {
     pub(super) fn deserialize_definition(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         buf.code_block(DESERIALIZE_SIGNATURE, |buf| {
-            match &self.body {
-                ValidatedUnionBody::Bool(b) => b.deserialize_bool(buf, tab),
-                ValidatedUnionBody::Enum(e) => e.deserialize_enum(buf, tab),
+            if self.is_option() {
+                self.deserialize_bool(buf, tab);
+            } else {
+                self.deserialize_enum(buf, tab);
             };
         });
     }
-}
 
-impl ValidatedUnionBoolBody {
     pub(super) fn deserialize_bool(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         buf.add_line("let (discriminant, input) = xdr_lib::get_bool(input)?;");
         buf.code_block("match discriminant", |buf| {
@@ -134,7 +133,7 @@ impl ValidatedUnionBoolBody {
                 buf.add_line("Ok((new, input))");
             });
             buf.code_block("true => ", |buf| {
-                self.true_arm.deserialize_inline(Some("val"), buf, tab);
+                self.true_arm().deserialize_inline(Some("val"), buf, tab);
                 buf.block_statement("let new = Self", |buf| {
                     buf.add_line("inner: Some(val),");
                 });
@@ -143,40 +142,32 @@ impl ValidatedUnionBoolBody {
             });
         });
     }
-}
-
-impl ValidatedUnionEnumBody {
     pub(super) fn deserialize_enum(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
-        buf.add_line("let (discriminant, input) = xdr_lib::get_i32(input)?;");
+        // While enums are represented as i32s, in practice this implementation requires them to be
+        // negative. At the same time, integer-discriminated unions may have an "unsigned int"
+        // discriminant which can in theory hold values > i32::MAX. Using get_u32() supports both
+        // of these.
+        buf.add_line("let (discriminant, input) = xdr_lib::get_u32(input)?;");
         buf.code_block("match discriminant", |buf| {
-            for arm in self.arms.iter() {
-                let discriminant_value = self.get_discriminant_value(&arm.0, tab);
-                buf.code_block(&format!("{discriminant_value} => "), |buf| {
-                    let arm_name = ValidatedUnionEnumBody::arm_name(&arm.0);
-                    match &arm.1 {
+            for arm in self.arms() {
+                let matches = if arm.default {
+                    "_".to_owned()
+                } else {
+                    format!("{}", arm.val)
+                };
+                buf.code_block(&format!("{} => ", matches), |buf| {
+                    match &arm.decl {
                         Declaration::Void => {
-                            buf.add_line(&format!("Ok((Self::{arm_name}, input))"));
+                            buf.add_line(&format!("Ok((Self::{}, input))", arm.name));
                         }
                         Declaration::Named(n) => {
                             n.deserialize_inline(Some("inner"), buf, tab);
-                            buf.add_line(&format!("Ok((Self::{arm_name}(inner), input))"));
+                            buf.add_line(&format!("Ok((Self::{}(inner), input))", arm.name));
                         }
                     };
                 });
             }
-            if let Some(default_arm) = &self.default_arm {
-                match default_arm {
-                    Declaration::Void => {
-                        buf.add_line("_ => Ok((Self::Default, input))");
-                    }
-                    Declaration::Named(n) => {
-                        buf.code_block("_ => ", |buf| {
-                            n.deserialize_inline(Some("inner"), buf, tab);
-                            buf.add_line("Ok((Self::Default(inner), input))");
-                        });
-                    }
-                };
-            } else {
+            if self.default_arm.is_none() {
                 buf.add_line("_ => Err(xdr_lib::DeserializeError)");
             }
         });
@@ -252,13 +243,12 @@ impl ValidatedStruct {
 }
 
 impl ValidatedEnum {
-    pub(super) fn deserialize_definition(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
+    pub(super) fn deserialize_definition(&self, buf: &mut CodeBuf) {
         buf.code_block(DESERIALIZE_SIGNATURE, |buf| {
             buf.add_line("let (val, input) = xdr_lib::get_i32(input)?;");
             buf.block_statement("let new = match val", |buf| {
                 for variant in self.variants.iter() {
-                    let val = variant.1.as_const(tab);
-                    buf.add_line(&format!("{} => {}::{},", val, self.name, variant.0));
+                    buf.add_line(&format!("{} => {}::{},", variant.1, self.name, variant.0));
                 }
                 buf.add_line("_ => return Err(xdr_lib::DeserializeError),");
             });

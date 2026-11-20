@@ -1,4 +1,4 @@
-use crate::ast::{ConstDefinition, DefaultUnionArm, NamedDeclaration, UnionArm, Value, XdrTypeDef};
+use crate::ast::*;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct DefinitionSize {
@@ -23,14 +23,11 @@ pub enum ValidatedDefinition {
     Union(ValidatedUnion),
 }
 
-/// For strings that are not used for their own value, but to resolve to another type.
-pub type UnresolvedName = String;
-
 /// "Enumerations have the same representation as signed integers."
 #[derive(Debug, PartialEq, Clone)]
 pub struct ValidatedEnum {
     pub name: String,
-    pub variants: Vec<(String, Value)>,
+    pub variants: Vec<(String, i32)>,
     pub size: DefinitionSize,
 }
 
@@ -51,37 +48,71 @@ pub struct ValidatedStruct {
 #[derive(Debug, PartialEq, Clone)]
 pub struct ValidatedUnion {
     pub name: String,
-    pub body: ValidatedUnionBody,
+    pub arms: Vec<ValidatedUnionArm>,
+    pub default_arm: Option<ValidatedUnionArm>,
     pub size: DefinitionSize,
 }
 
-/// An XDR Union can be discriminated by either an [un]signed int, bool, or an enum.
-/// (int-discriminated unions are represented in the enum case.)
-#[derive(Debug, PartialEq, Clone)]
-pub enum ValidatedUnionBody {
-    Bool(ValidatedUnionBoolBody),
-    Enum(ValidatedUnionEnumBody),
+impl ValidatedUnion {
+    pub fn arms(&self) -> impl Iterator<Item = &ValidatedUnionArm> {
+        self.arms.iter().chain(self.default_arm.iter())
+    }
+
+    /// True if this union is equivalent to an Option, i.e., the discriminant is a bool, the true
+    /// arm is non-void, and the false arm is void.
+    ///
+    /// Such unions are represented as Options in Rust and therefore have different encoding and
+    /// decoding.
+    pub fn is_option(&self) -> bool {
+        // The existence of a default arm means this is not an Option.
+        if self.default_arm.is_some() {
+            return false;
+        }
+
+        for arm in &self.arms {
+            match arm.val {
+                // False arm must be void.
+                0 => {
+                    if matches!(arm.decl, Declaration::Named(_)) {
+                        return false;
+                    }
+                }
+
+                // True arm must be non-void.
+                1 => {
+                    if matches!(arm.decl, Declaration::Void) {
+                        return false;
+                    }
+                }
+
+                // Any other discriminant value means this is not an Option.
+                _ => return false,
+            };
+        }
+
+        true
+    }
+
+    /// Returns the True arm of an "Option" style union. Panics if such an arm does not exist.
+    pub fn true_arm(&self) -> &NamedDeclaration {
+        let arm = self.arms.iter().find(|a| a.val == 1).unwrap();
+
+        let Declaration::Named(decl) = &arm.decl else {
+            panic!("'True' arm of an Option style union must not be a void declaration.");
+        };
+
+        decl
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct ValidatedUnionBoolBody {
-    pub true_arm: NamedDeclaration,
+pub struct ValidatedUnionArm {
+    /// The discriminant value for this arm.
+    pub val: u32,
 
-    pub size: DefinitionSize,
-}
+    /// Whether this is a default arm, which should match any value not covered by another arm.
+    pub default: bool,
 
-/// An "enum" style union (as opposed to a bool style union) is used for enum-discriminated as well
-/// as [unsigned] int-discriminated unions.
-///
-/// In the int case, only the Value -> Declaration mappings are needed (so the discriminant is
-/// None).
-///
-/// In the enum case, the name of the enum is needed in order to resolve the enum variant to the
-/// right integer value.
-#[derive(Debug, PartialEq, Clone)]
-pub struct ValidatedUnionEnumBody {
-    pub discriminant: Option<UnresolvedName>,
-    pub arms: Vec<UnionArm>,
-    pub default_arm: DefaultUnionArm,
-    pub size: DefinitionSize,
+    pub name: String,
+    pub decl: Declaration,
 }

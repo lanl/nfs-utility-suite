@@ -153,7 +153,7 @@ impl ValidatedDefinition {
     fn implementation(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable, params: &Params) {
         match self {
             ValidatedDefinition::Enum(e) => {
-                e.codegen(buf, tab, params);
+                e.codegen(buf, params);
             }
             ValidatedDefinition::Struct(s) => {
                 s.codegen(buf, tab, params);
@@ -205,7 +205,7 @@ impl ValidatedDefinition {
         }
     }
 
-    fn as_const(&self) -> u64 {
+    pub fn as_const(&self) -> u64 {
         match self {
             ValidatedDefinition::Const(c) => c.value,
             _ => panic!("not a constant"),
@@ -512,65 +512,54 @@ impl ValidatedUnion {
         derive_serialize: bool,
     ) {
         buf.type_header(debug, derive_serialize);
-        match &self.body {
-            ValidatedUnionBody::Bool(b) => b.definition_bool(&self.name, buf, tab),
-            ValidatedUnionBody::Enum(e) => e.definition_enum(&self.name, buf, tab),
-        };
+        if self.is_option() {
+            self.definition_bool(&self.name, buf, tab);
+        } else {
+            self.definition_enum(&self.name, buf, tab);
+        }
     }
 
     fn default(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         buf.code_block(&format!("impl Default for {}", self.name), |buf| {
-            buf.code_block("fn default() -> Self", |buf| match &self.body {
-                ValidatedUnionBody::Bool(b) => b.default_bool(buf),
-                ValidatedUnionBody::Enum(e) => e.default_enum(buf, tab),
-            })
+            buf.code_block("fn default() -> Self", |buf| {
+                if self.is_option() {
+                    self.default_bool(buf)
+                } else {
+                    self.default_enum(buf, tab)
+                }
+            });
         });
     }
     fn width_getter(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
-        buf.code_block("pub fn get_width(&self) -> usize", |buf| match &self.body {
-            ValidatedUnionBody::Bool(validated_union_bool_body) => {
+        buf.code_block("pub fn get_width(&self) -> usize", |buf| {
+            if self.is_option() {
                 buf.code_block("4usize + match &self.inner", |buf| {
                     buf.add_line("None => 0,");
                     buf.code_block("Some(_val) =>", |buf| {
-                        validated_union_bool_body
-                            .true_arm
-                            .get_width(buf, "_val", tab);
+                        self.true_arm().get_width(buf, "_val", tab);
                     });
                 })
-            }
-            ValidatedUnionBody::Enum(e) => {
+            } else {
                 buf.code_block("4usize + match &self", |buf| {
-                    for arm in e.arms.iter() {
-                        let name = ValidatedUnionEnumBody::arm_name(&arm.0);
-                        match &arm.1 {
-                            Declaration::Void => buf.add_line(&format!("Self::{name} => 0,")),
+                    for arm in self.arms() {
+                        match &arm.decl {
+                            Declaration::Void => buf.add_line(&format!("Self::{} => 0,", arm.name)),
                             Declaration::Named(n) => {
-                                buf.code_block(&format!("Self::{name}(_val) =>"), |buf| {
+                                buf.code_block(&format!("Self::{}(_val) =>", arm.name), |buf| {
                                     n.get_width(buf, "_val", tab);
                                 });
                             }
                         };
                     }
-                    match &e.default_arm {
-                        Some(Declaration::Void) => buf.add_line("Self::Default => 0,"),
-                        Some(Declaration::Named(n)) => {
-                            buf.code_block("Self::Default(_val) =>", |buf| {
-                                n.get_width(buf, "_val", tab);
-                            });
-                        }
-                        None => {}
-                    }
                 });
             }
         });
     }
-}
 
-impl ValidatedUnionBoolBody {
     fn definition_bool(&self, name: &str, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         // XXX: A Bool union nearly always has Void for the false arm.
         // Until I see an example where this is not the case, express it as an Option.
-        let inner_type = self.true_arm.as_type_name(tab);
+        let inner_type = self.true_arm().as_type_name(tab);
 
         buf.code_block(&format!("pub struct {name}"), |buf| {
             buf.add_line(&format!("pub inner: Option<{inner_type}>,"));
@@ -581,45 +570,24 @@ impl ValidatedUnionBoolBody {
             buf.add_line("inner: None,");
         });
     }
-}
-
-impl ValidatedUnionEnumBody {
-    /// Given a union case value, which can be either an integer or an identifier, return a name
-    /// suitable for a variant in a Rust enum.
-    fn arm_name(val: &Value) -> String {
-        match val {
-            Value::Int(i) => format!("Var{i}"),
-            Value::Name(n) => n.to_string(),
-        }
-    }
     fn definition_enum(&self, name: &str, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         buf.code_block(&format!("pub enum {name}"), |buf| {
-            for arm in self.arms.iter() {
-                let name = ValidatedUnionEnumBody::arm_name(&arm.0);
-                match &arm.1 {
-                    Declaration::Void => buf.add_line(&format!("{name},")),
+            for arm in self.arms() {
+                match &arm.decl {
+                    Declaration::Void => buf.add_line(&format!("{},", arm.name)),
                     Declaration::Named(n) => {
                         let inner_type = n.as_type_name(tab);
-                        buf.add_line(&format!("{name}({inner_type}),"));
+                        buf.add_line(&format!("{}({inner_type}),", arm.name));
                     }
                 };
-            }
-
-            match &self.default_arm {
-                Some(Declaration::Void) => buf.add_line("Default,"),
-                Some(Declaration::Named(n)) => {
-                    let inner_type = n.as_type_name(tab);
-                    buf.add_line(&format!("Default({inner_type}),"));
-                }
-                None => {} // Don't generate anything for absent default arm.
             }
         })
     }
 
     pub(super) fn get_explicit_lifetime(&self, tab: &ValidatedSymbolTable) -> &str {
         let mut explicit_lifetime: &str = "";
-        for arm in self.arms.iter() {
-            match &arm.1 {
+        for arm in self.arms() {
+            match &arm.decl {
                 Declaration::Void => {}
                 Declaration::Named(n) => {
                     let inner_type = n.as_zcopy_dser_type_name(tab);
@@ -630,16 +598,6 @@ impl ValidatedUnionEnumBody {
                 }
             };
         }
-        match &self.default_arm {
-            Some(Declaration::Void) => {}
-            Some(Declaration::Named(n)) => {
-                let inner_type = n.as_zcopy_dser_type_name(tab);
-                if inner_type.contains("<'a>") {
-                    explicit_lifetime = "::<'a>";
-                }
-            }
-            None => {} // Don't generate anything for absent default arm.
-        }
 
         explicit_lifetime
     }
@@ -647,58 +605,21 @@ impl ValidatedUnionEnumBody {
     /// Serialize an Enum union, either using allocating or non-allocating code depending on the
     /// value of `alloc`.
     fn serialize_enum(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable, alloc: bool) {
-        let mut max_disc = 0; // Used to determine the discriminant for a default
-                              // arm, when present.
         if alloc {
             buf.add_line("let mut buf = Vec::new();");
         }
         buf.code_block("match self", |buf| {
-            for arm in &self.arms {
-                let arm_name = ValidatedUnionEnumBody::arm_name(&arm.0);
-                match &arm.1 {
+            for arm in self.arms() {
+                match &arm.decl {
                     Declaration::Void => {
-                        buf.code_block(&format!("Self::{arm_name} => "), |buf| {
-                            max_disc = self
-                                .serialize_discriminant_value(&arm.0, max_disc, buf, tab, alloc);
+                        buf.code_block(&format!("Self::{} => ", arm.name), |buf| {
+                            self.serialize_discriminant_value(arm.val, buf, alloc);
                             buf.add_line("// void");
                         });
                     }
                     Declaration::Named(n) => {
-                        buf.code_block(&format!("Self::{arm_name}(inner) => "), |buf| {
-                            max_disc = self
-                                .serialize_discriminant_value(&arm.0, max_disc, buf, tab, alloc);
-                            if alloc {
-                                n.serialize_inline(Some("inner"), Context::InUnion, buf, tab);
-                            } else {
-                                n.serialize_no_alloc_inline(Some("inner"), buf, tab);
-                            }
-                        });
-                    }
-                };
-            }
-            if let Some(default_arm) = &self.default_arm {
-                match default_arm {
-                    Declaration::Void => {
-                        buf.code_block("Self::Default => ", |buf| {
-                            let _ = self.serialize_discriminant_value(
-                                &Value::Int(max_disc + 1),
-                                0,
-                                buf,
-                                tab,
-                                alloc,
-                            );
-                            buf.add_line("// void");
-                        });
-                    }
-                    Declaration::Named(n) => {
-                        buf.code_block("Self::Default(inner) => ", |buf| {
-                            let _ = self.serialize_discriminant_value(
-                                &Value::Int(max_disc + 1),
-                                0,
-                                buf,
-                                tab,
-                                alloc,
-                            );
+                        buf.code_block(&format!("Self::{}(inner) => ", arm.name), |buf| {
+                            self.serialize_discriminant_value(arm.val, buf, alloc);
                             if alloc {
                                 n.serialize_inline(Some("inner"), Context::InUnion, buf, tab);
                             } else {
@@ -714,68 +635,30 @@ impl ValidatedUnionEnumBody {
         }
     }
 
-    /// Get the value of `val` as a u64, and then write the code to serialize it according to
-    /// `alloc`.
+    /// Write the code to serialize `disc` according to `alloc`.
     ///
     /// Compare it to `max_disc` and return the larger of the two. This is to serialize default
     /// arms: they should use a discriminant value that doesn't get used for another arm.
-    ///
-    /// Panics if `val` won't fit into an `i32` -- it is an error to try to use such a large value
-    /// as an Enum variant because the XDR spec requires Enum variants be encoded as signed ints.
-    fn serialize_discriminant_value(
-        &self,
-        val: &Value,
-        max_disc: u64,
-        buf: &mut CodeBuf,
-        tab: &ValidatedSymbolTable,
-        alloc: bool,
-    ) -> u64 {
-        let disc = self.get_discriminant_value(val, tab);
+    fn serialize_discriminant_value(&self, disc: u32, buf: &mut CodeBuf, alloc: bool) {
         if alloc {
-            let disc: i32 = disc.try_into().unwrap();
             buf.add_line(&format!(
-                "buf.extend_from_slice(&{disc}_i32.to_be_bytes());"
+                "buf.extend_from_slice(&{disc}_u32.to_be_bytes());"
             ));
         } else {
-            buf.serialize_int(disc.try_into().unwrap());
-        }
-
-        if disc > max_disc {
-            disc
-        } else {
-            max_disc
+            buf.serialize_uint(disc);
         }
     }
+
     fn default_enum(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
-        let (value, declaration) = &self.arms[0];
-        let name = match &value {
-            Value::Int(i) => format!("Var{i}"),
-            Value::Name(n) => n.to_string(),
-        };
-        match declaration {
-            Declaration::Void => buf.add_line(&format!("Self::{name}")),
+        let arm = &self.arms[0];
+
+        match &arm.decl {
+            Declaration::Void => buf.add_line(&format!("Self::{}", arm.name)),
             Declaration::Named(d) => {
                 let inner_default = d.default_value(tab);
-                buf.add_line(&format!("Self::{name}({inner_default})"));
+                buf.add_line(&format!("Self::{}({inner_default})", arm.name));
             }
         };
-    }
-
-    /// Given the value `val`, convert it into its integer value for encoding. If `val` is already
-    /// an int, use that, otherwise if it's a string, look it up in the discriminant enum.
-    fn get_discriminant_value(&self, val: &Value, tab: &ValidatedSymbolTable) -> u64 {
-        match val {
-            Value::Int(i) => *i,
-            Value::Name(n) => {
-                let Some(ref disc) = self.discriminant else {
-                    panic!("BUG: attempt to use enum-style union without a discriminant");
-                };
-                let ValidatedDefinition::Enum(ref e) = *tab.lookup_definition(disc) else {
-                    panic!("Using non-enum {n} as union discriminant is not allowed");
-                };
-                e.lookup_value(n, tab).unwrap()
-            }
-        }
     }
 }
 
@@ -938,21 +821,21 @@ impl ValidatedStruct {
 }
 
 impl ValidatedEnum {
-    fn codegen(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable, params: &Params) {
+    fn codegen(&self, buf: &mut CodeBuf, params: &Params) {
         self.default(buf);
         buf.code_block(&format!("impl {}", self.name), |buf| {
             if params.alloc {
-                self.serialize_definition(buf, tab);
+                self.serialize_definition(buf);
             }
             if params.no_alloc {
-                self.serialize_no_alloc(buf, tab);
+                self.serialize_no_alloc(buf);
             }
             buf.add_line("");
 
             if params.zcopy {
-                self.deserialize_definition_zcopy(buf, tab);
+                self.deserialize_definition_zcopy(buf);
             } else {
-                self.deserialize_definition(buf, tab);
+                self.deserialize_definition(buf);
             }
         });
         buf.add_line("");
@@ -974,22 +857,6 @@ impl ValidatedEnum {
                 buf.add_line(&format!("{},", var.0));
             }
         });
-    }
-    /// Given the string `name`, look it up in this enum and return its integer value.
-    ///
-    /// Returns None if `name` does not appear as a variant in this enum, and returns Err(_) if the
-    /// value of `name` exists but is unresolvable.
-    fn lookup_value(&self, name: &str, tab: &ValidatedSymbolTable) -> Option<u64> {
-        for var in self.variants.iter() {
-            if name == var.0 {
-                return match &var.1 {
-                    Value::Int(i) => Some(*i),
-                    Value::Name(n) => Some(tab.lookup_definition(n).as_const()),
-                };
-            }
-        }
-
-        None
     }
 }
 

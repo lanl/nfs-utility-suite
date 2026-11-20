@@ -127,3 +127,15 @@ fn optional_invalid_discriminant() {
         assert!(optional::ListBegin::deserialize(&bytes).is_err());
     }
 }
+
+/// An int-discriminated union without a default arm should not allow discriminant values other
+/// than the specified arms.
+#[test]
+fn int_union_invalid_disc() {
+    for invalid in [0u32, 3u32] {
+        let u = unions::IntDiscriminant::VAL1(7);
+        let mut bytes = u.serialize_alloc();
+        bytes[0..4].copy_from_slice(&invalid.to_be_bytes());
+        assert!(unions::IntDiscriminant::deserialize(&bytes).is_err());
+    }
+}
