@@ -78,13 +78,24 @@ pub struct ValidatedUnionBoolBody {
 #[derive(Debug, PartialEq, Clone)]
 pub struct ValidatedUnionEnumBody {
     pub arms: Vec<ValidatedUnionArm>,
-    pub default_arm: Option<Declaration>,
+    pub default_arm: Option<ValidatedUnionArm>,
     pub size: DefinitionSize,
+}
+
+impl ValidatedUnionEnumBody {
+    pub fn arms(&self) -> impl Iterator<Item = &ValidatedUnionArm> {
+        self.arms.iter().chain(self.default_arm.iter())
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct ValidatedUnionArm {
+    /// The discriminant value for this arm.
     pub val: u32,
+
+    /// Whether this is a default arm, which should match any value not covered by another arm.
+    pub default: bool,
+
     pub name: String,
     pub decl: Declaration,
 }

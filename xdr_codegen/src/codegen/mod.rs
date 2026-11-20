@@ -540,7 +540,7 @@ impl ValidatedUnion {
             }
             ValidatedUnionBody::Enum(e) => {
                 buf.code_block("4usize + match &self", |buf| {
-                    for arm in e.arms.iter() {
+                    for arm in e.arms() {
                         match &arm.decl {
                             Declaration::Void => buf.add_line(&format!("Self::{} => 0,", arm.name)),
                             Declaration::Named(n) => {
@@ -549,15 +549,6 @@ impl ValidatedUnion {
                                 });
                             }
                         };
-                    }
-                    match &e.default_arm {
-                        Some(Declaration::Void) => buf.add_line("Self::Default => 0,"),
-                        Some(Declaration::Named(n)) => {
-                            buf.code_block("Self::Default(_val) =>", |buf| {
-                                n.get_width(buf, "_val", tab);
-                            });
-                        }
-                        None => {}
                     }
                 });
             }
@@ -585,7 +576,7 @@ impl ValidatedUnionBoolBody {
 impl ValidatedUnionEnumBody {
     fn definition_enum(&self, name: &str, buf: &mut CodeBuf, tab: &ValidatedSymbolTable) {
         buf.code_block(&format!("pub enum {name}"), |buf| {
-            for arm in self.arms.iter() {
+            for arm in self.arms() {
                 match &arm.decl {
                     Declaration::Void => buf.add_line(&format!("{},", arm.name)),
                     Declaration::Named(n) => {
@@ -594,21 +585,12 @@ impl ValidatedUnionEnumBody {
                     }
                 };
             }
-
-            match &self.default_arm {
-                Some(Declaration::Void) => buf.add_line("Default,"),
-                Some(Declaration::Named(n)) => {
-                    let inner_type = n.as_type_name(tab);
-                    buf.add_line(&format!("Default({inner_type}),"));
-                }
-                None => {} // Don't generate anything for absent default arm.
-            }
         })
     }
 
     pub(super) fn get_explicit_lifetime(&self, tab: &ValidatedSymbolTable) -> &str {
         let mut explicit_lifetime: &str = "";
-        for arm in self.arms.iter() {
+        for arm in self.arms() {
             match &arm.decl {
                 Declaration::Void => {}
                 Declaration::Named(n) => {
@@ -620,16 +602,6 @@ impl ValidatedUnionEnumBody {
                 }
             };
         }
-        match &self.default_arm {
-            Some(Declaration::Void) => {}
-            Some(Declaration::Named(n)) => {
-                let inner_type = n.as_zcopy_dser_type_name(tab);
-                if inner_type.contains("<'a>") {
-                    explicit_lifetime = "::<'a>";
-                }
-            }
-            None => {} // Don't generate anything for absent default arm.
-        }
 
         explicit_lifetime
     }
@@ -637,45 +609,21 @@ impl ValidatedUnionEnumBody {
     /// Serialize an Enum union, either using allocating or non-allocating code depending on the
     /// value of `alloc`.
     fn serialize_enum(&self, buf: &mut CodeBuf, tab: &ValidatedSymbolTable, alloc: bool) {
-        let mut max_disc = 0; // Used to determine the discriminant for a default
-                              // arm, when present.
         if alloc {
             buf.add_line("let mut buf = Vec::new();");
         }
         buf.code_block("match self", |buf| {
-            for arm in &self.arms {
+            for arm in self.arms() {
                 match &arm.decl {
                     Declaration::Void => {
                         buf.code_block(&format!("Self::{} => ", arm.name), |buf| {
-                            max_disc =
-                                self.serialize_discriminant_value(arm.val, max_disc, buf, alloc);
+                            self.serialize_discriminant_value(arm.val, buf, alloc);
                             buf.add_line("// void");
                         });
                     }
                     Declaration::Named(n) => {
                         buf.code_block(&format!("Self::{}(inner) => ", arm.name), |buf| {
-                            max_disc =
-                                self.serialize_discriminant_value(arm.val, max_disc, buf, alloc);
-                            if alloc {
-                                n.serialize_inline(Some("inner"), Context::InUnion, buf, tab);
-                            } else {
-                                n.serialize_no_alloc_inline(Some("inner"), buf, tab);
-                            }
-                        });
-                    }
-                };
-            }
-            if let Some(default_arm) = &self.default_arm {
-                match default_arm {
-                    Declaration::Void => {
-                        buf.code_block("Self::Default => ", |buf| {
-                            let _ = self.serialize_discriminant_value(max_disc + 1, 0, buf, alloc);
-                            buf.add_line("// void");
-                        });
-                    }
-                    Declaration::Named(n) => {
-                        buf.code_block("Self::Default(inner) => ", |buf| {
-                            let _ = self.serialize_discriminant_value(max_disc + 1, 0, buf, alloc);
+                            self.serialize_discriminant_value(arm.val, buf, alloc);
                             if alloc {
                                 n.serialize_inline(Some("inner"), Context::InUnion, buf, tab);
                             } else {
@@ -695,25 +643,13 @@ impl ValidatedUnionEnumBody {
     ///
     /// Compare it to `max_disc` and return the larger of the two. This is to serialize default
     /// arms: they should use a discriminant value that doesn't get used for another arm.
-    fn serialize_discriminant_value(
-        &self,
-        disc: u32,
-        max_disc: u32,
-        buf: &mut CodeBuf,
-        alloc: bool,
-    ) -> u32 {
+    fn serialize_discriminant_value(&self, disc: u32, buf: &mut CodeBuf, alloc: bool) {
         if alloc {
             buf.add_line(&format!(
                 "buf.extend_from_slice(&{disc}_u32.to_be_bytes());"
             ));
         } else {
             buf.serialize_uint(disc);
-        }
-
-        if disc > max_disc {
-            disc
-        } else {
-            max_disc
         }
     }
 

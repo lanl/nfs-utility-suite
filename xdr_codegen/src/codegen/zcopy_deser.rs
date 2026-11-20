@@ -920,7 +920,7 @@ impl ValidatedUnionEnumBody {
 
         let mut arms_translated: Vec<String> = Vec::new();
         let mut explicit_lifetime: &str = "";
-        for arm in self.arms.iter() {
+        for arm in self.arms() {
             match &arm.decl {
                 Declaration::Void => arms_translated.push(format!("{},", arm.name)),
                 Declaration::Named(n) => {
@@ -932,19 +932,6 @@ impl ValidatedUnionEnumBody {
                     }
                 }
             };
-        }
-        match &self.default_arm {
-            Some(Declaration::Void) => {
-                arms_translated.push("Default,".to_string());
-            }
-            Some(Declaration::Named(n)) => {
-                let inner_type = n.as_zcopy_dser_type_name(tab);
-                arms_translated.push(format!("Default({inner_type}),"));
-                if inner_type.contains("<'a>") {
-                    explicit_lifetime = "<'a>";
-                }
-            }
-            None => {} // Don't generate anything for absent default arm.
         }
 
         buf.add_line("#[derive(Debug, PartialEq, Clone)]");
@@ -974,8 +961,9 @@ impl ValidatedUnionEnumBody {
         buf.add_line("if _input.len() < 4 { return Err(xdr_lib::DeserializeError); }");
         buf.add_line("let discriminant = xdr_lib::get_i32_infallible(_input);");
         buf.code_block("match discriminant", |buf| {
-            for arm in self.arms.iter() {
-                buf.code_block(&format!("{} => ", arm.val), |buf| {
+            for arm in self.arms() {
+                let matches = if arm.default { "_".to_owned() } else { format!("{}", arm.val) };
+                buf.code_block(&format!("{} => ", matches), |buf| {
                     match &arm.decl {
                         Declaration::Void => {
                             buf.add_line(&format!("{u_name}::{}", arm.name));
@@ -993,8 +981,6 @@ impl ValidatedUnionEnumBody {
                                 ));
                             }
 
-                            // buf.add_line(&format!("let mut inner = {};", n.default_value(tab)));
-                            // n.deserialize_inline(Some("inner"), buf, tab);
                             buf.block_with_trailer("let inner =", ";", |buf| {
                                 // TODO: suport recursive optionals in unions if the need arises
                                 n.deserialize_inline_zcopy(buf, tab, true, None, false);
@@ -1005,34 +991,7 @@ impl ValidatedUnionEnumBody {
                     };
                 });
             }
-            if let Some(default_arm) = &self.default_arm {
-                match default_arm {
-                    Declaration::Void => {
-                        buf.add_line(&format!("_ => {u_name}::Default,"));
-                    }
-                    Declaration::Named(n) => {
-                        buf.code_block("_ => ", |buf| {
-                            buf.add_line("let off = off + 4;");
-                            buf.add_line("let _input = unsafe { buf.get_unchecked(off..) };");
-
-                            let size = n.size(tab);
-
-                            if let Some(size) = size{
-                                buf.add_line(&format!(
-                                    "if _input.len() < {} {{ return Err(xdr_lib::DeserializeError) }}",
-                                    size,
-                                ));
-                            }
-
-                            buf.block_statement("let inner =", |buf| {
-                                // TODO: suport recursive optionals in unions if the need arises
-                                n.deserialize_inline_zcopy(buf, tab, true, None, false);
-                            });
-                            buf.add_line(&format!("{u_name}::Default(inner)"));
-                        });
-                    }
-                };
-            } else {
+            if self.default_arm.is_none() {
                 buf.add_line("_ => return Err(xdr_lib::DeserializeError),");
             }
         });
@@ -1045,11 +1004,15 @@ impl ValidatedUnionEnumBody {
         tab: &ValidatedSymbolTable,
     ) {
         buf.code_block("Ok(4usize + match &self.inner", |buf| {
-            for arm in self.arms.iter() {
-                // let discriminant_value = self.get_discriminant_value(&arm.0, tab);
+            for arm in self.arms() {
+                let matches = if arm.default {
+                    "_".to_owned()
+                } else {
+                    format!("{}Ret::{}", u_name, arm.name)
+                };
                 match &arm.decl {
                     Declaration::Void => {
-                        buf.code_block(&format!("{}Ret::{} => ", u_name, arm.name), |buf| {
+                        buf.code_block(&format!("{matches} => "), |buf| {
                             buf.add_line("Ok(0)");
                         });
                     }
@@ -1059,22 +1022,6 @@ impl ValidatedUnionEnumBody {
                                 buf.add_line(&format!("Ok({})", width));
                             } else {
                                 buf.add_line("_val.get_width()")
-                            }
-                        });
-                    }
-                };
-            }
-            if let Some(default_arm) = &self.default_arm {
-                match default_arm {
-                    Declaration::Void => {
-                        buf.add_line("_ => Ok(0),");
-                    }
-                    Declaration::Named(n) => {
-                        buf.code_block(&format!("{}Ret::Default(_val) =>", u_name), |buf| {
-                            if let Some(width) = n.size(tab) {
-                                buf.add_line(&format!("Ok({})", width));
-                            } else {
-                                buf.add_line("&_val.get_width()")
                             }
                         });
                     }

@@ -362,11 +362,13 @@ impl XdrUnionBoolBody {
         let arms = vec![
             ValidatedUnionArm {
                 val: 1,
+                default: false,
                 name: "True".to_owned(),
                 decl: Declaration::Named(self.true_arm),
             },
             ValidatedUnionArm {
                 val: 0,
+                default: false,
                 name: "False".to_owned(),
                 decl: self.false_arm,
             },
@@ -398,12 +400,32 @@ impl XdrUnionEnumBody {
             deps: size.deps.clone(),
         };
 
+        let arms = self.resolve_arms(tab);
+
+        // Take the highest discriminant and add 1 to get the discriminant for the default arm.
+        let max_disc = arms
+            .iter()
+            .map(|a| a.val)
+            .max()
+            .expect("There should be at least one arm to a union.");
+
+        let default_val = max_disc
+            .checked_add(1)
+            .expect("Need to handle default value for union with u32::MAX as discriminant value.");
+
+        let default_arm = self.default_arm.map(|decl| ValidatedUnionArm {
+            val: default_val,
+            default: true,
+            name: "Default".to_owned(),
+            decl,
+        });
+
         ValidatedDefinition::Union(ValidatedUnion {
             name: u_name,
             body: ValidatedUnionBody::Enum(ValidatedUnionEnumBody {
-                arms: self.resolve_arms(tab),
-                default_arm: self.default_arm,
-                size: size.clone(),
+                arms,
+                default_arm,
+                size,
             }),
             size: overall_size,
         })
@@ -537,6 +559,7 @@ impl XdrUnionEnumBody {
 
                 ValidatedUnionArm {
                     val,
+                    default: false,
                     name: name.to_owned(),
                     decl: arm.1.clone(),
                 }

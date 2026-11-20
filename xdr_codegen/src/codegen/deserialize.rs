@@ -153,8 +153,13 @@ impl ValidatedUnionEnumBody {
         // of these.
         buf.add_line("let (discriminant, input) = xdr_lib::get_u32(input)?;");
         buf.code_block("match discriminant", |buf| {
-            for arm in self.arms.iter() {
-                buf.code_block(&format!("{} => ", arm.val), |buf| {
+            for arm in self.arms() {
+                let matches = if arm.default {
+                    "_".to_owned()
+                } else {
+                    format!("{}", arm.val)
+                };
+                buf.code_block(&format!("{} => ", matches), |buf| {
                     match &arm.decl {
                         Declaration::Void => {
                             buf.add_line(&format!("Ok((Self::{}, input))", arm.name));
@@ -166,19 +171,7 @@ impl ValidatedUnionEnumBody {
                     };
                 });
             }
-            if let Some(default_arm) = &self.default_arm {
-                match default_arm {
-                    Declaration::Void => {
-                        buf.add_line("_ => Ok((Self::Default, input))");
-                    }
-                    Declaration::Named(n) => {
-                        buf.code_block("_ => ", |buf| {
-                            n.deserialize_inline(Some("inner"), buf, tab);
-                            buf.add_line("Ok((Self::Default(inner), input))");
-                        });
-                    }
-                };
-            } else {
+            if self.default_arm.is_none() {
                 buf.add_line("_ => Err(xdr_lib::DeserializeError)");
             }
         });
