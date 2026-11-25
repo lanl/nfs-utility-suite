@@ -4,8 +4,6 @@
 // This file does code generation for allocating serialization routines which return a Vec<u8>,
 // and de-serialization routines.
 
-use std::collections::HashSet;
-
 use crate::ast::*;
 use crate::ir::*;
 use crate::symbol_table::ValidatedSymbolTable;
@@ -771,20 +769,23 @@ impl ValidatedUnionEnumBody {
 }
 
 impl ValidatedStruct {
-    fn get_variable_width_last_deps(&self) -> HashSet<&String> {
-        let mut deps: HashSet<&String> = HashSet::new();
-        for (_, size) in self.members.iter() {
-            deps.extend(size.deps.iter());
-        }
-
-        deps
+    fn get_variable_width_last_deps(&self) -> Vec<&String> {
+        self.members
+            .iter()
+            .map(|(member, _)| &member.name)
+            .filter(|name| {
+                self.members
+                    .iter()
+                    .any(|(_, offset)| offset.deps.contains(name))
+            })
+            .collect()
     }
 
-    fn get_variable_width_members(&self, tab: &ValidatedSymbolTable) -> HashSet<&String> {
-        let mut deps: HashSet<&String> = self.get_variable_width_last_deps();
+    fn get_variable_width_members(&self, tab: &ValidatedSymbolTable) -> Vec<&String> {
+        let mut deps = self.get_variable_width_last_deps();
         if let Some((last, _)) = self.members.last() {
-            if last.size(tab).is_none() {
-                deps.insert(&last.name);
+            if last.size(tab).is_none() && !deps.contains(&&last.name) {
+                deps.push(&last.name);
             }
         }
 
