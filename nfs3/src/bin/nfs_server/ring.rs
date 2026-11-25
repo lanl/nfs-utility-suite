@@ -203,12 +203,12 @@ impl<T> RpcServer<T> {
         }
 
         if procedure_number as usize > map.procedures.len() - 1 {
-            debug!("CALL for unknown procedure {}", procedure_number);
+            debug!("CALL for unknown procedure {procedure_number}");
             todo!("handle this");
         }
 
         let Some(procedure) = map.procedures[procedure_number as usize] else {
-            debug!("CALL for unimplemented procedure {}", procedure_number);
+            debug!("CALL for unimplemented procedure {procedure_number}");
             todo!("handle this");
         };
 

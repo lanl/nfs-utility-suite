@@ -80,7 +80,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("mount_failed: {mount_res:?}")
             }
         }
-        println!("mount_res: {:?}", mount_res);
+        println!("mount_res: {mount_res:?}");
     }
 
     Ok(())

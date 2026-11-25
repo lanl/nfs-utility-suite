@@ -155,13 +155,13 @@ impl<T> RpcProgram<T> {
         }
 
         if procedure_number as usize > self.procedures.len() - 1 {
-            debug!("CALL for unknown procedure {}", procedure_number);
+            debug!("CALL for unknown procedure {procedure_number}");
             let reply = ReplyBody::accepted_reply(AcceptedReplyBody::ProcUnavail);
             return Err(crate::Error::Rpc(reply));
         }
 
         let Some(procedure) = self.procedures[procedure_number as usize] else {
-            debug!("CALL for unimplemented procedure {}", procedure_number);
+            debug!("CALL for unimplemented procedure {procedure_number}");
             let reply = ReplyBody::accepted_reply(AcceptedReplyBody::ProcUnavail);
             return Err(crate::Error::Rpc(reply));
         };
@@ -183,7 +183,7 @@ pub fn validate_program_and_version(
         AuthFlavor::None => {}
         AuthFlavor::Sys => {}
         _ => {
-            debug!("CALL with unsupported auth: {:?}", credential);
+            debug!("CALL with unsupported auth: {credential:?}");
             let reply = ReplyBody::Denied(RejectedReply::AuthError(AuthStat::RejectedCred));
             return Err(crate::Error::Rpc(reply));
         }
@@ -191,14 +191,14 @@ pub fn validate_program_and_version(
 
     let call_prog = call.get_program();
     if call_prog != program {
-        debug!("CALL for unknown program {}", call_prog);
+        debug!("CALL for unknown program {call_prog}");
         let reply = ReplyBody::accepted_reply(AcceptedReplyBody::ProgUnavail);
         return Err(crate::Error::Rpc(reply));
     }
 
     let version = call.get_version();
     if version < version_min || version > version_max {
-        debug!("CALL for unknown version {}", version);
+        debug!("CALL for unknown version {version}");
         let reply = ReplyBody::accepted_reply(AcceptedReplyBody::ProgMismatch(ProgMismatchBody {
             low: version_min,
             high: version_max,

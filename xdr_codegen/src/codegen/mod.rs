@@ -324,10 +324,7 @@ impl Array {
                     "".to_string()
                 } else {
                     let len = value.as_const(tab);
-                    format!(
-                        "if {name} > {} {{ return Err(xdr_lib::DeserializeError); }}\n",
-                        len
-                    )
+                    format!("if {name} > {len} {{ return Err(xdr_lib::DeserializeError); }}\n")
                 }
             }
             _ => "".to_string(),
@@ -392,7 +389,7 @@ impl NamedDeclaration {
         // "type" => "r#type", frst remove the escape prefix:
         let original_name = self.name.strip_prefix("r#").unwrap_or(&self.name);
 
-        format!("field_{}", original_name)
+        format!("field_{original_name}")
     }
 
     fn is_varlen_reader(&self, tab: &ValidatedSymbolTable) -> bool {
@@ -424,8 +421,7 @@ impl NamedDeclaration {
                         "4usize + "
                     };
                     buf.add_line(&format!(
-                        "{}xdr_lib::padded_infallible({}.len())",
-                        count_addition, name
+                        "{count_addition}xdr_lib::padded_infallible({name}.len())"
                     ))
                 }
                 ArrayKind::UserType(xdr_type) => {
@@ -437,14 +433,12 @@ impl NamedDeclaration {
                     };
                     if let Some(elem_size) = elem_size {
                         buf.add_line(&format!(
-                            "{}xdr_lib::padded_infallible({}.len() * {})",
-                            count_addition, name, elem_size
+                            "{count_addition}xdr_lib::padded_infallible({name}.len() * {elem_size})"
                         ));
                     } else {
                         buf.block_with_trailer(
                             &format!(
-                                "{count_addition}xdr_lib::padded_infallible({}.iter().map(|_v|",
-                                name
+                                "{count_addition}xdr_lib::padded_infallible({name}.iter().map(|_v|"
                             ),
                             ").sum())",
                             |buf| {
@@ -457,10 +451,7 @@ impl NamedDeclaration {
             DeclarationKind::Optional(xdr_type) => {
                 if self.is_self_referential(tab) {
                     buf.block_with_trailer(
-                        &format!(
-                            "4usize + xdr_lib::padded_infallible({}.iter().map(|_v|",
-                            name
-                        ),
+                        &format!("4usize + xdr_lib::padded_infallible({name}.iter().map(|_v|"),
                         ").sum())",
                         |buf| {
                             buf.code_block("4usize +", |buf| {
@@ -469,7 +460,7 @@ impl NamedDeclaration {
                         },
                     );
                 } else {
-                    buf.code_block(&format!("4usize + match &{}", name), |buf| {
+                    buf.code_block(&format!("4usize + match &{name}"), |buf| {
                         buf.add_line("None => 0,");
                         buf.code_block("Some(_val) =>", |buf| {
                             xdr_type.get_width(buf, "_val", tab);
@@ -860,7 +851,7 @@ impl ValidatedStruct {
 
             buf.code_block(
                 &format!("fn get_{}_width(&self) -> usize", name.replace("r#", "")),
-                |buf| member.get_width(buf, &format!("self.{}", name), tab),
+                |buf| member.get_width(buf, &format!("self.{name}"), tab),
             );
         }
 

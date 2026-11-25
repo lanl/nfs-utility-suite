@@ -361,16 +361,12 @@ impl XdrUnionEnumBody {
                 }
                 Value::Name(value_name) => {
                     if !all_possible.contains(value_name) {
-                        panic!(
-                            "{}: unknown enum type for {}: {}",
-                            u_name, discriminant_name, value_name
-                        )
+                        panic!("{u_name}: unknown enum type for {discriminant_name}: {value_name}")
                     }
 
                     if !left.remove(value_name) {
                         panic!(
-                            "{}: enum variant {}::{} seems to be a duplicate case",
-                            u_name, discriminant_name, value_name
+                            "{u_name}: enum variant {discriminant_name}::{value_name} seems to be a duplicate case"
                         )
                     }
                 }
@@ -402,7 +398,7 @@ impl XdrUnionEnumBody {
                     }
                 }
                 None => {
-                    panic!("union {} does not have any arms!", u_name)
+                    panic!("union {u_name} does not have any arms!")
                 }
             }
         };
