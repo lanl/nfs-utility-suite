@@ -223,3 +223,25 @@ fn assemble_record_too_large() {
     let res = assembler.next_fragment(RecordMark { len: 1, last: true });
     assert!(matches!(res, Err(ProtocolError::RecordTooLarge)));
 }
+
+#[test]
+fn pending_calls() {
+    let mut pending = client::PendingCalls::new(u32::MAX);
+
+    // XIDs are handed out in order, and wrap around:
+    let a = pending.insert("a");
+    let b = pending.insert("b");
+    assert_eq!((a, b), (u32::MAX, 0));
+    assert_eq!(pending.len(), 2);
+
+    assert_eq!(pending.remove(a), Some("a"));
+    // A second reply to the same call matches nothing:
+    assert_eq!(pending.remove(a), None);
+    // Neither does a reply to a call that was never made:
+    assert_eq!(pending.remove(12345), None);
+
+    let mut rest: Vec<_> = pending.drain().collect();
+    rest.sort();
+    assert_eq!(rest, ["b"]);
+    assert!(pending.is_empty());
+}
