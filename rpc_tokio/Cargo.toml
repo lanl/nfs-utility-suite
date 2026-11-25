@@ -1,0 +1,17 @@
+[package]
+name = "rpc_tokio"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "rpc_tokio"
+path = "src/lib.rs"
+doctest = false
+
+[dependencies]
+log = "0.4.27"
+rpc_protocol = { path = "../rpc_protocol" }
+tokio = { version = "1", features = ["io-util", "rt", "sync"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "time"] }

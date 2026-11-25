@@ -12,6 +12,8 @@ LANL software release number: O4912. See the LICENSE file for copyright and lice
 - `rpc_protocol/` -- this directory holds a library that implements the RPC protocol. It only
   encodes and decodes messages, and does no I/O itself.
 - `rpc_blocking/` -- a blocking RPC client and server built on `rpc_protocol`.
+- `rpc_tokio/` -- an asynchronous RPC client built on `rpc_protocol` and tokio, which supports
+  many concurrent calls on one connection.
 - `rpcbind/` -- binaries that implement the rpcbind protocol, both client and server side.
   These are effectively (currently incomplete) clones of the standard `rpcbind` and `rpcinfo` binaries.
 - `nfs3/` -- programs and libraries related to the NFS v3 protocol.

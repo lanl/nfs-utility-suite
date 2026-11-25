@@ -5,6 +5,7 @@ members = [
     "nfs3",
     "rpc_blocking",
     "rpc_protocol",
+    "rpc_tokio",
     "tests/alloc",
     "tests/no_alloc",
     "tests/zcopy",
