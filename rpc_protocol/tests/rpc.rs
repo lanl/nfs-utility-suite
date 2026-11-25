@@ -98,6 +98,8 @@ fn call_and_reply_roundtrip() {
     assert_eq!(call.arg, [1, 2, 3, 4]);
 
     let record = server::encode_succesful_reply(call.xid, &[5, 6, 7, 8]);
+    assert_eq!(client::peek_xid(&record[RECORD_MARK_SIZE..]), Some(99));
+
     let (message, result) = RpcMessage::deserialize(&record[RECORD_MARK_SIZE..]).unwrap();
     assert_eq!(message.xid, 99);
     let RpcMessageBody::Reply(reply) = message.body else {

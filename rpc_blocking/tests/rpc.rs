@@ -155,6 +155,102 @@ fn call_with_fragmented_reply() {
 }
 
 #[test]
+fn call_skips_everything_but_its_own_reply() {
+    let (mut client_endpoint, mut server_endpoint) = pipe::pipe().unwrap();
+
+    std::thread::spawn(move || {
+        let mut mark = [0; RECORD_MARK_SIZE];
+        server_endpoint.read_exact(&mut mark).unwrap();
+        let mut call = vec![0; RecordMark::decode(&mark).len as usize];
+        server_endpoint.read_exact(&mut call).unwrap();
+        let xid = decode_call(&call).unwrap().xid;
+        let other_xid = xid.wrapping_sub(1);
+
+        // A reply to some earlier call:
+        let stale = encode_succesful_reply(other_xid, &[9, 9, 9, 9]);
+        server_endpoint.write_all(&stale).unwrap();
+
+        // A malformed record with the XID of some earlier call (its message type is neither CALL
+        // nor REPLY):
+        let mark = RecordMark { len: 8, last: true };
+        server_endpoint.write_all(&mark.encode()).unwrap();
+        server_endpoint.write_all(&other_xid.to_be_bytes()).unwrap();
+        server_endpoint.write_all(&[0, 0, 0, 99]).unwrap();
+
+        // A call made by the server, which happens to have the same XID as the client's call:
+        let server_call = client::encode_call(
+            xid,
+            CallBody {
+                rpcvers: RPC_VERSION,
+                prog: 7,
+                vers: 4,
+                proc: 1,
+                cred: OpaqueAuth::none(),
+                verf: OpaqueAuth::none(),
+            },
+            &[8, 8, 8, 8],
+        );
+        server_endpoint.write_all(&server_call).unwrap();
+
+        // And finally the actual reply:
+        let reply = encode_succesful_reply(xid, &[1, 2, 3, 4]);
+        server_endpoint.write_all(&reply).unwrap();
+    });
+
+    let res = do_rpc_call(
+        &mut client_endpoint,
+        CallBody {
+            rpcvers: RPC_VERSION,
+            prog: 7,
+            vers: 4,
+            proc: 1,
+            cred: OpaqueAuth::none(),
+            verf: OpaqueAuth::none(),
+        },
+        &[0; 0],
+    );
+
+    assert_eq!(res.unwrap(), [1, 2, 3, 4]);
+}
+
+#[test]
+fn call_fails_on_malformed_reply() {
+    let (mut client_endpoint, mut server_endpoint) = pipe::pipe().unwrap();
+
+    std::thread::spawn(move || {
+        let mut mark = [0; RECORD_MARK_SIZE];
+        server_endpoint.read_exact(&mut mark).unwrap();
+        let mut call = vec![0; RecordMark::decode(&mark).len as usize];
+        server_endpoint.read_exact(&mut call).unwrap();
+        let xid = decode_call(&call).unwrap().xid;
+
+        // The right XID, followed by a message type that is neither CALL nor REPLY:
+        let mark = RecordMark { len: 8, last: true };
+        server_endpoint.write_all(&mark.encode()).unwrap();
+        server_endpoint.write_all(&xid.to_be_bytes()).unwrap();
+        server_endpoint.write_all(&[0, 0, 0, 99]).unwrap();
+    });
+
+    let res = do_rpc_call(
+        &mut client_endpoint,
+        CallBody {
+            rpcvers: RPC_VERSION,
+            prog: 7,
+            vers: 4,
+            proc: 1,
+            cred: OpaqueAuth::none(),
+            verf: OpaqueAuth::none(),
+        },
+        &[0; 0],
+    );
+
+    assert!(
+        matches!(res, Err(Error::Protocol(ProtocolError::Decode))),
+        "got {res:?}"
+    );
+}
+
+#[test]
 fn connection_stays_open_after_error_reply() {
     let mut client_endpoint = launch_example_server();
 

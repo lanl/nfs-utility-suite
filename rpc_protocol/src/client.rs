@@ -26,3 +26,11 @@ pub fn encode_call(xid: u32, call: CallBody, arg: &[u8]) -> Vec<u8> {
 
     buf
 }
+
+/// Returns the transaction ID of a record without decoding the rest of it. This makes it possible
+/// to tell which call a reply was meant for even when the reply is malformed.
+pub fn peek_xid(record: &[u8]) -> Option<u32> {
+    let (xid, _) = xdr_lib::get_u32(record).ok()?;
+
+    Some(xid)
+}
