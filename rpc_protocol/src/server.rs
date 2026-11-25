@@ -100,8 +100,10 @@ impl<T> RpcProgram<T> {
     }
 
     /// Tries to handle a given stream by reading a series of RPC Call messages from it, and
-    /// passing those calls off to the appropriate implementation function to handle. If any errors
-    /// are encountered, the function returns and the stream is dropped.
+    /// passing those calls off to the appropriate implementation function to handle. A call that
+    /// is not valid for this service, or that the implementation function could not handle, gets
+    /// an error reply, and the connection stays open. If a message can't be decoded as a call, or
+    /// if an I/O error is encountered, the function returns and the stream is dropped.
     pub fn handle_connection<S: Read + Write>(
         &mut self,
         mut stream: S,
@@ -127,16 +129,26 @@ impl<T> RpcProgram<T> {
                         send_reply_no_arg(&mut stream, call.xid, reply)?;
                     }
 
-                    return Ok(());
+                    continue;
                 }
             };
 
             let res = procedure(&call, &mut self.private_state);
 
-            let _ = match res {
-                RpcResult::Success(data) => send_succesful_reply(&mut stream, call.xid, &data),
-                // can reply with either GARBAGE_ARGS, SYSTEM_ERR, or SUCCESS
-                _ => todo!(),
+            // If only part of a reply could be written, then the client can no longer tell where
+            // the next reply starts, so give up on the connection if any of these fail:
+            match res {
+                RpcResult::Success(data) => send_succesful_reply(&mut stream, call.xid, &data)?,
+                RpcResult::GarbageArgs => send_reply_no_arg(
+                    &mut stream,
+                    call.xid,
+                    ReplyBody::accepted_reply(AcceptedReplyBody::GarbageArgs),
+                )?,
+                RpcResult::SystemErr => send_reply_no_arg(
+                    &mut stream,
+                    call.xid,
+                    ReplyBody::accepted_reply(AcceptedReplyBody::SystemErr),
+                )?,
             };
         }
     }

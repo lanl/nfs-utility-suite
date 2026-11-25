@@ -169,6 +169,146 @@ fn decode_call_credential_longer_than_record() {
     assert!(matches!(res, Err(ProtocolError::Decode)), "got {res:?}");
 }
 
+#[test]
+fn connection_stays_open_after_error_reply() {
+    let mut client_endpoint = launch_example_server();
+
+    // invalid CALL: wrong procedure number
+    let res = client::do_rpc_call(
+        &mut client_endpoint,
+        7,
+        4,
+        2,
+        &[0; 0],
+        OpaqueAuth::none(),
+        OpaqueAuth::none(),
+    );
+    expected_error(res, AcceptedReplyBody::ProcUnavail);
+
+    // invalid CALL: wrong program number
+    let res = client::do_rpc_call(
+        &mut client_endpoint,
+        8,
+        4,
+        1,
+        &[0; 0],
+        OpaqueAuth::none(),
+        OpaqueAuth::none(),
+    );
+    expected_error(res, AcceptedReplyBody::ProgUnavail);
+
+    // A valid call on the same connection still works:
+    let res = client::do_rpc_call(
+        &mut client_endpoint,
+        7,
+        4,
+        1,
+        &[0; 0],
+        OpaqueAuth::none(),
+        OpaqueAuth::none(),
+    );
+    assert_eq!(res.unwrap(), []);
+}
+
+fn garbage_args_procedure(_call: &Call, _state: &mut ()) -> server::RpcResult {
+    server::RpcResult::GarbageArgs
+}
+
+fn system_err_procedure(_call: &Call, _state: &mut ()) -> server::RpcResult {
+    server::RpcResult::SystemErr
+}
+
+#[test]
+fn procedure_errors_are_sent_as_replies() {
+    let (mut client_endpoint, mut server_endpoint) = pipe::pipe().unwrap();
+
+    let procedures: Vec<Option<server::RpcProcedure<()>>> = vec![
+        None,
+        Some(garbage_args_procedure),
+        Some(system_err_procedure),
+    ];
+    let mut server = server::RpcProgram::new(7, 2, 4, procedures, ());
+
+    std::thread::spawn(move || {
+        let _ = server.handle_connection(&mut server_endpoint);
+    });
+
+    let res = client::do_rpc_call(
+        &mut client_endpoint,
+        7,
+        4,
+        1,
+        &[0; 0],
+        OpaqueAuth::none(),
+        OpaqueAuth::none(),
+    );
+    expected_error(res, AcceptedReplyBody::GarbageArgs);
+
+    let res = client::do_rpc_call(
+        &mut client_endpoint,
+        7,
+        4,
+        2,
+        &[0; 0],
+        OpaqueAuth::none(),
+        OpaqueAuth::none(),
+    );
+    expected_error(res, AcceptedReplyBody::SystemErr);
+}
+
+/// A stream which holds one valid call to be read, and on which every write fails.
+struct WriteFails {
+    call: std::io::Cursor<Vec<u8>>,
+}
+
+impl Read for WriteFails {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.call.read(buf)
+    }
+}
+
+impl Write for WriteFails {
+    fn write(&mut self, _buf: &[u8]) -> std::io::Result<usize> {
+        Err(std::io::ErrorKind::BrokenPipe.into())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+#[test]
+fn server_gives_up_on_connection_when_reply_cant_be_written() {
+    let message = RpcMessage {
+        xid: 1,
+        body: RpcMessageBody::Call(CallBody {
+            rpcvers: 2,
+            prog: 7,
+            vers: 4,
+            proc: 1,
+            cred: OpaqueAuth::none(),
+            verf: OpaqueAuth::none(),
+        }),
+    }
+    .serialize_alloc();
+
+    // The call, prefaced by its record mark:
+    let mut call = (message.len() as u32 | (1 << 31)).to_be_bytes().to_vec();
+    call.extend_from_slice(&message);
+
+    let stream = WriteFails {
+        call: std::io::Cursor::new(call),
+    };
+
+    let mut server = server::RpcProgram::new(7, 2, 4, vec![None, Some(server::null_procedure)], ());
+
+    let res = server.handle_connection(stream);
+    let Err(Error::Io(e)) = res else {
+        panic!("Expected an I/O error, got {res:?}");
+    };
+    assert_eq!(e.kind(), std::io::ErrorKind::BrokenPipe);
+}
+
 /// Launches an RpcProgram with program number 7, version range 2-4, and one procedure defined (in
 /// addition to procedure 0 which is always defined.)
 ///
