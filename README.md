@@ -9,7 +9,9 @@ LANL software release number: O4912. See the LICENSE file for copyright and lice
 - `xdr_codegen/` -- this directory houses the library used to compile an XDR language specification
   into a Rust library that implements the [de]serialization of the defined data types.
 - `test_xdr/` -- this directory holds tests for the `xdr_codegen` library.
-- `rpc_protocol/` -- this directory holds a library that implements the RPC protocol.
+- `rpc_protocol/` -- this directory holds a library that implements the RPC protocol. It only
+  encodes and decodes messages, and does no I/O itself.
+- `rpc_blocking/` -- a blocking RPC client and server built on `rpc_protocol`.
 - `rpcbind/` -- binaries that implement the rpcbind protocol, both client and server side.
   These are effectively (currently incomplete) clones of the standard `rpcbind` and `rpcinfo` binaries.
 - `nfs3/` -- programs and libraries related to the NFS v3 protocol.

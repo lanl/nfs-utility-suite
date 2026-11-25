@@ -53,23 +53,6 @@ pub struct RpcProgram<T> {
     private_state: T,
 }
 
-/// A trait that allows functions to be generic over both TcpListener and UnixListener.
-pub trait Listener<S> {
-    fn accept(&self) -> std::io::Result<S>;
-}
-
-impl Listener<std::net::TcpStream> for std::net::TcpListener {
-    fn accept(&self) -> std::io::Result<std::net::TcpStream> {
-        Ok(self.accept()?.0)
-    }
-}
-
-impl Listener<std::os::unix::net::UnixStream> for std::os::unix::net::UnixListener {
-    fn accept(&self) -> std::io::Result<std::os::unix::net::UnixStream> {
-        Ok(self.accept()?.0)
-    }
-}
-
 impl<T> RpcProgram<T> {
     pub fn new(
         program: u32,
@@ -87,77 +70,43 @@ impl<T> RpcProgram<T> {
         }
     }
 
-    /// Run a blocking TCP server for this RPC service using the given Listener.
-    pub fn run_blocking_tcp_server<S: Read + Write>(&mut self, listener: impl Listener<S>) {
-        loop {
-            match listener.accept() {
-                Ok(stream) => {
-                    let _ = self.handle_connection(stream);
-                }
-                Err(e) => warn!("Error accepting connection: {e}"),
-            }
-        }
-    }
+    /// Given a complete record (without the record mark) that holds an RPC call, passes the call
+    /// off to the appropriate implementation function and returns the reply to send back, encoded
+    /// as a record that begins with a record mark.
+    ///
+    /// A call which is not valid for this service, or which the procedure implementation could
+    /// not handle, still results in a reply, which tells the caller what was wrong.
+    ///
+    /// An error means that the record could not be understood as a call at all, in which case
+    /// there is nothing to reply to and the connection should be closed.
+    pub fn handle_call(&mut self, record: &[u8]) -> Result<Vec<u8>, ProtocolError> {
+        let call = decode_call(record)?;
 
-    /// Tries to handle a given stream by reading a series of RPC Call messages from it, and
-    /// passing those calls off to the appropriate implementation function to handle. A call that
-    /// is not valid for this service, or that the implementation function could not handle, gets
-    /// an error reply, and the connection stays open. If a message can't be decoded as a call, or
-    /// if an I/O error is encountered, the function returns and the stream is dropped.
-    pub fn handle_connection<S: Read + Write>(
-        &mut self,
-        mut stream: S,
-    ) -> Result<(), crate::Error> {
-        loop {
-            let message_length = stream_record_mark(&mut stream)?;
-            trace!("got message with record mark: {message_length}");
+        let procedure = match self.validate_call(&call) {
+            Ok(proc) => proc,
+            Err(reply) => return Ok(encode_reply_no_arg(call.xid, reply)),
+        };
 
-            let mut buf = vec![0; message_length as usize];
-            stream
-                .read_exact(&mut buf)
-                .inspect_err(|e| warn!("Error reading message from stream: {e}"))?;
+        let reply = match procedure(&call, &mut self.private_state) {
+            RpcResult::Success(data) => encode_succesful_reply(call.xid, &data),
+            RpcResult::GarbageArgs => encode_reply_no_arg(
+                call.xid,
+                ReplyBody::accepted_reply(AcceptedReplyBody::GarbageArgs),
+            ),
+            RpcResult::SystemErr => encode_reply_no_arg(
+                call.xid,
+                ReplyBody::accepted_reply(AcceptedReplyBody::SystemErr),
+            ),
+        };
 
-            let call = match decode_call(&buf) {
-                Ok(call) => call,
-                Err(e) => return Err(Error::Protocol(e)),
-            };
-
-            let procedure = match self.validate_call(&call) {
-                Ok(proc) => proc,
-                Err(e) => {
-                    if let Error::Rpc(reply) = e {
-                        send_reply_no_arg(&mut stream, call.xid, reply)?;
-                    }
-
-                    continue;
-                }
-            };
-
-            let res = procedure(&call, &mut self.private_state);
-
-            // If only part of a reply could be written, then the client can no longer tell where
-            // the next reply starts, so give up on the connection if any of these fail:
-            match res {
-                RpcResult::Success(data) => send_succesful_reply(&mut stream, call.xid, &data)?,
-                RpcResult::GarbageArgs => send_reply_no_arg(
-                    &mut stream,
-                    call.xid,
-                    ReplyBody::accepted_reply(AcceptedReplyBody::GarbageArgs),
-                )?,
-                RpcResult::SystemErr => send_reply_no_arg(
-                    &mut stream,
-                    call.xid,
-                    ReplyBody::accepted_reply(AcceptedReplyBody::SystemErr),
-                )?,
-            };
-        }
+        Ok(reply)
     }
 
     /// Given an RPC call, checks if it is a valid call for this service. If so returns the
     /// procedure which implements that call.
     ///
-    /// Otherwise, returns the appropiate kind of error.
-    fn validate_call(&self, call: &Call) -> Result<RpcProcedure<T>, Error> {
+    /// Otherwise, returns the error reply to send back.
+    fn validate_call(&self, call: &Call) -> Result<RpcProcedure<T>, ReplyBody> {
         validate_program_and_version(call, self.program, self.version_min, self.version_max)?;
 
         let procedure_number = call.header.proc;
@@ -168,26 +117,26 @@ impl<T> RpcProgram<T> {
 
         if procedure_number as usize > self.procedures.len() - 1 {
             debug!("CALL for unknown procedure {procedure_number}");
-            let reply = ReplyBody::accepted_reply(AcceptedReplyBody::ProcUnavail);
-            return Err(crate::Error::Rpc(reply));
+            return Err(ReplyBody::accepted_reply(AcceptedReplyBody::ProcUnavail));
         }
 
         let Some(procedure) = self.procedures[procedure_number as usize] else {
             debug!("CALL for unimplemented procedure {procedure_number}");
-            let reply = ReplyBody::accepted_reply(AcceptedReplyBody::ProcUnavail);
-            return Err(crate::Error::Rpc(reply));
+            return Err(ReplyBody::accepted_reply(AcceptedReplyBody::ProcUnavail));
         };
 
         Ok(procedure)
     }
 }
 
+/// Checks that the call uses a supported kind of authentication and is for the given program
+/// and range of versions. If not, returns the error reply to send back.
 pub fn validate_program_and_version(
     call: &Call,
     program: u32,
     version_min: u32,
     version_max: u32,
-) -> Result<(), Error> {
+) -> Result<(), ReplyBody> {
     // This implementation currently only supports auth styles "None" and "Sys":
     let credential = &call.header.cred;
 
@@ -196,36 +145,33 @@ pub fn validate_program_and_version(
         AuthFlavor::Sys => {}
         _ => {
             debug!("CALL with unsupported auth: {credential:?}");
-            let reply = ReplyBody::Denied(RejectedReply::AuthError(AuthStat::RejectedCred));
-            return Err(crate::Error::Rpc(reply));
+            return Err(ReplyBody::Denied(RejectedReply::AuthError(
+                AuthStat::RejectedCred,
+            )));
         }
     };
 
     let call_prog = call.header.prog;
     if call_prog != program {
         debug!("CALL for unknown program {call_prog}");
-        let reply = ReplyBody::accepted_reply(AcceptedReplyBody::ProgUnavail);
-        return Err(crate::Error::Rpc(reply));
+        return Err(ReplyBody::accepted_reply(AcceptedReplyBody::ProgUnavail));
     }
 
     let version = call.header.vers;
     if version < version_min || version > version_max {
         debug!("CALL for unknown version {version}");
-        let reply = ReplyBody::accepted_reply(AcceptedReplyBody::ProgMismatch(ProgMismatchBody {
-            low: version_min,
-            high: version_max,
-        }));
-        return Err(crate::Error::Rpc(reply));
+        return Err(ReplyBody::accepted_reply(AcceptedReplyBody::ProgMismatch(
+            ProgMismatchBody {
+                low: version_min,
+                high: version_max,
+            },
+        )));
     }
     Ok(())
 }
 
-/// Write a reply to the stream without encoding any procedure result (for example, an error reply).
-fn send_reply_no_arg<S: Read + Write>(
-    stream: &mut S,
-    xid: u32,
-    reply_data: ReplyBody,
-) -> Result<(), crate::Error> {
+/// Encode a reply without any procedure result (for example, an error reply).
+pub fn encode_reply_no_arg(xid: u32, reply_data: ReplyBody) -> Vec<u8> {
     let message = RpcMessage {
         xid,
         body: RpcMessageBody::Reply(reply_data),
@@ -235,9 +181,7 @@ fn send_reply_no_arg<S: Read + Write>(
     buf.append(&mut message.serialize_alloc());
     crate::update_record_mark(&mut buf);
 
-    stream.write_all(&buf)?;
-
-    Ok(())
+    buf
 }
 
 impl ReplyBody {
@@ -249,24 +193,13 @@ impl ReplyBody {
     }
 }
 
-/// Given the reply body, encode it and send it on the given TcpStream.
+/// Encode a succesful reply which carries `arg`, the encoded result of the procedure.
 ///
 /// XXX: can the protocol definition be adjusted so that AcceptedReplyBody::Success(_) holds
 /// arg instead of needing to split out arg into a separate Option?
 ///
 /// TODO: currently hard-coded to use auth "None"--this will have to be updated to use the
 /// correct kind of auth based on the call.
-fn send_succesful_reply<S: Read + Write>(
-    stream: &mut S,
-    xid: u32,
-    arg: &[u8],
-) -> Result<(), crate::Error> {
-    let buf = encode_succesful_reply(xid, arg);
-    stream.write_all(&buf)?;
-
-    Ok(())
-}
-
 pub fn encode_succesful_reply(xid: u32, arg: &[u8]) -> Vec<u8> {
     let body = RpcMessageBody::Reply(ReplyBody::accepted_reply(AcceptedReplyBody::Success(
         [0u8; 0],

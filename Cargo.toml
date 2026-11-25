@@ -3,6 +3,7 @@ resolver = "1"
 
 members = [
     "nfs3",
+    "rpc_blocking",
     "rpc_protocol",
     "tests/alloc",
     "tests/no_alloc",

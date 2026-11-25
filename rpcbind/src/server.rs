@@ -11,6 +11,7 @@ use std::os::unix::net::UnixListener;
 
 use crate::*;
 use crate::{procedures::*, RpcbindServerAddress};
+use rpc_blocking::server::run_blocking_tcp_server;
 use rpc_protocol::{server::*, Call};
 
 pub fn main(addr: RpcbindServerAddress) {
@@ -23,7 +24,7 @@ pub fn main(addr: RpcbindServerAddress) {
     match addr {
         RpcbindServerAddress::Tcp(addr) => {
             let listener = TcpListener::bind(addr).unwrap();
-            server.run_blocking_tcp_server(listener);
+            run_blocking_tcp_server(&mut server, listener);
         }
         RpcbindServerAddress::Unix(addr) => {
             // Not necessary to check for errors in remove_file() because ENOENT is expected, and
@@ -31,7 +32,7 @@ pub fn main(addr: RpcbindServerAddress) {
             // bind().
             let _ = std::fs::remove_file(&addr);
             let listener = UnixListener::bind(addr).unwrap();
-            server.run_blocking_tcp_server(listener);
+            run_blocking_tcp_server(&mut server, listener);
         }
     }
 }

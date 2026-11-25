@@ -551,6 +551,7 @@ dependencies = [
  "libc",
  "log",
  "nix",
+ "rpc_blocking",
  "rpc_protocol",
  "rpcbind",
  "serde",
@@ -750,11 +751,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
-name = "rpc_protocol"
+name = "rpc_blocking"
 version = "0.1.0"
 dependencies = [
  "log",
  "nix",
+ "rpc_protocol",
+]
+
+[[package]]
+name = "rpc_protocol"
+version = "0.1.0"
+dependencies = [
+ "log",
  "xdr_codegen",
  "xdr_lib",
 ]
@@ -767,6 +776,7 @@ dependencies = [
  "env_logger",
  "log",
  "nix",
+ "rpc_blocking",
  "rpc_protocol",
  "xdr_codegen",
  "xdr_lib",

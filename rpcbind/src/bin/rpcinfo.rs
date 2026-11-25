@@ -7,7 +7,8 @@ use clap::Parser;
 
 include!(concat!(env!("OUT_DIR"), "/rpcbind.rs"));
 
-use rpc_protocol::{client::*, OpaqueAuth};
+use rpc_blocking::client::*;
+use rpc_protocol::{CallBody, OpaqueAuth, RPC_VERSION};
 
 #[derive(Parser)]
 struct Cli {
@@ -25,12 +26,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let res = do_rpc_call(
         &mut stream,
-        rpcbind::procedures::RPCBPROG,
-        rpcbind::procedures::RPCBVERS::VERSION,
-        rpcbind::procedures::RPCBVERS::RPCBPROC_DUMP,
+        CallBody {
+            rpcvers: RPC_VERSION,
+            prog: rpcbind::procedures::RPCBPROG,
+            vers: rpcbind::procedures::RPCBVERS::VERSION,
+            proc: rpcbind::procedures::RPCBVERS::RPCBPROC_DUMP,
+            cred: OpaqueAuth::none(),
+            verf: OpaqueAuth::none(),
+        },
         &[0u8; 0],
-        OpaqueAuth::none(),
-        OpaqueAuth::none(),
     )?;
 
     let (list, _) = rpcbind::RpcbindList::deserialize(res.as_slice())?;

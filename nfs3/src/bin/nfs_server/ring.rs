@@ -162,18 +162,20 @@ impl<T> RpcServer<T> {
 
         let mut buf = &buf[..amount as usize];
 
-        if buf.len() < 4 {
+        if buf.len() < RECORD_MARK_SIZE {
             // TODO: eventually, this should either try to recv more data, or just submit a
             // cancellation request and close the connection.
             todo!("Not enough bytes to read a record marker. Giving up.");
         }
 
-        let Ok(record_mark) = decode_record_mark(&buf[..4].try_into().unwrap()) else {
+        let record_mark = RecordMark::decode(&buf[..RECORD_MARK_SIZE].try_into().unwrap());
+        if !record_mark.last {
             // TODO: either handle this case, or submit a cancellation and close.
             todo!("Not handling message fragments. Giving up");
-        };
+        }
+        let record_mark = record_mark.len;
 
-        buf = &buf[4..]; // Advance buf past the record mark.
+        buf = &buf[RECORD_MARK_SIZE..]; // Advance buf past the record mark.
 
         if buf.len() < record_mark as usize {
             // TODO: need to read more data, unfortunately it will come back in anothe buffer, I assume

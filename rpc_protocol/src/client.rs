@@ -3,85 +3,26 @@
 
 use crate::*;
 
-/// Do an RPC call indicated by the `prog`, `vers`, and `proc`, arguments, using the given
-/// `stream`.
+/// Encodes the RPC call described by `call` into a record that is ready to be written to a
+/// stream transport (that is, it begins with a record mark).
 ///
 /// `arg` must always be passed, but a zero-length slice can be used for a procedure which takes no
 /// arguments.
-///
-/// This blocks the calling thread until the procedure returns a result. It returns either that
-/// result as a byte vector (which the caller can decode), or an error.
-pub fn do_rpc_call<S: Read + Write>(
-    stream: &mut S,
-    prog: u32,
-    vers: u32,
-    proc: u32,
-    arg: &[u8],
-    cred: OpaqueAuth,
-    verf: OpaqueAuth,
-) -> Result<Vec<u8>, Error> {
-    let body = RpcMessageBody::Call(CallBody {
-        rpcvers: RPC_VERSION,
-        prog,
-        vers,
-        proc,
-        cred,
-        verf,
-    });
-
-    let xid = get_xid();
+pub fn encode_call(xid: u32, call: CallBody, arg: &[u8]) -> Vec<u8> {
+    let body = RpcMessageBody::Call(call);
 
     let message = RpcMessage { xid, body };
 
     let mut buf = buf_with_dummy_record_mark();
 
+    // TODO: this copies `arg`, and lets the buffer grow as needed rather than allocating the
+    // right size up front. Avoiding the copy means either letting the caller serialize the
+    // argument directly into this buffer, or returning the header on its own so that the header
+    // and the argument can be written with one vectored write.
     buf.append(&mut message.serialize_alloc());
     buf.extend_from_slice(arg);
 
     update_record_mark(&mut buf);
 
-    if let Err(e) = stream.write_all(&buf) {
-        return Err(Error::Io(e));
-    };
-
-    read_reply_from_stream(xid, stream)
-}
-
-fn read_reply_from_stream<S: Read + Write>(
-    xid: u32,
-    stream: &mut S,
-) -> Result<Vec<u8>, crate::Error> {
-    let message_length = stream_record_mark(stream)?;
-
-    let mut buf = vec![0; message_length as usize];
-    if let Err(e) = stream.read_exact(&mut buf) {
-        return Err(Error::Io(e));
-    }
-
-    let Ok((message, rest)) = RpcMessage::deserialize(buf.as_slice()) else {
-        return Err(Error::Protocol(ProtocolError::Decode));
-    };
-
-    // Assuming that the stream was just used for sending the message indicated by the arg `xid`, it
-    // is unexpected to get a different XID back in the reply:
-    if message.xid != xid {
-        return Err(Error::Protocol(ProtocolError::Decode));
-    };
-
-    // It is unexpected to receive a Call message after sending a Call message:
-    let RpcMessageBody::Reply(reply) = message.body else {
-        return Err(Error::Protocol(ProtocolError::Decode));
-    };
-
-    // Only continue for accepted succesful replies: anything else is returned as an error:
-    let ReplyBody::Accepted(ref arep) = reply else {
-        return Err(Error::Rpc(reply));
-    };
-    let AcceptedReplyBody::Success(_) = arep.reply_data else {
-        return Err(Error::Rpc(reply));
-    };
-
-    // The entire header was already been decoded, so the rest of the message is the return value
-    // of the RPC Call:
-    Ok(rest.to_vec())
+    buf
 }
