@@ -197,7 +197,7 @@ impl<T> RpcServer<T> {
             todo!("Handle this");
         };
 
-        let procedure_number = call.get_procedure();
+        let procedure_number = call.header.proc;
         if procedure_number == 0 {
             todo!("Implement null procedure");
         }
@@ -214,7 +214,7 @@ impl<T> RpcServer<T> {
 
         let res = procedure(&call, &mut self.user_state);
 
-        self.process_user_result(res, call.get_xid(), conn_fd);
+        self.process_user_result(res, call.xid, conn_fd);
     }
 
     fn process_user_result(&mut self, res: RingResult, xid: u32, conn_fd: i32) {

@@ -148,7 +148,7 @@ impl<T> RpcProgram<T> {
     fn validate_call(&self, call: &Call) -> Result<RpcProcedure<T>, Error> {
         validate_program_and_version(call, self.program, self.version_min, self.version_max)?;
 
-        let procedure_number = call.get_procedure();
+        let procedure_number = call.header.proc;
 
         if procedure_number == 0 {
             return Ok(null_procedure);
@@ -177,7 +177,7 @@ pub fn validate_program_and_version(
     version_max: u32,
 ) -> Result<(), Error> {
     // This implementation currently only supports auth styles "None" and "Sys":
-    let credential = call.get_credential();
+    let credential = &call.header.cred;
 
     match credential.flavor {
         AuthFlavor::None => {}
@@ -189,14 +189,14 @@ pub fn validate_program_and_version(
         }
     };
 
-    let call_prog = call.get_program();
+    let call_prog = call.header.prog;
     if call_prog != program {
         debug!("CALL for unknown program {call_prog}");
         let reply = ReplyBody::accepted_reply(AcceptedReplyBody::ProgUnavail);
         return Err(crate::Error::Rpc(reply));
     }
 
-    let version = call.get_version();
+    let version = call.header.vers;
     if version < version_min || version > version_max {
         debug!("CALL for unknown version {version}");
         let reply = ReplyBody::accepted_reply(AcceptedReplyBody::ProgMismatch(ProgMismatchBody {

@@ -94,38 +94,15 @@ impl fmt::Display for ProtocolError {
 /// A `call` holds the data needed to respond to an RPC call.
 #[derive(Debug)]
 pub struct Call<'a> {
-    xid: u32,
-    inner: CallBody,
+    /// Transaction ID of this call.
+    pub xid: u32,
+
+    /// The call's header, which holds the program, version and procedure numbers (e.g., 100003,
+    /// 3, and 1 for GETATTR in NFS v3), and the credential and verifier.
+    pub header: CallBody,
 
     /// The call's encoded argument.
     pub arg: &'a [u8],
-}
-
-impl Call<'_> {
-    /// Transaction ID of this call.
-    pub fn get_xid(&self) -> u32 {
-        self.xid
-    }
-
-    /// Program number, e.g., 10005 for NFS v3.
-    pub fn get_program(&self) -> u32 {
-        self.inner.prog
-    }
-
-    /// Version number, e.g., 3 for NFS v3.
-    pub fn get_version(&self) -> u32 {
-        self.inner.vers
-    }
-
-    /// Procedure number, e.g., 1 for GETATTR in NFS v3.
-    pub fn get_procedure(&self) -> u32 {
-        self.inner.proc
-    }
-
-    /// Credential
-    pub fn get_credential(&self) -> &OpaqueAuth {
-        &self.inner.cred
-    }
 }
 
 /// Given an encoded RPC call in `data` (including both the call header and the encoded arguments),
@@ -166,7 +143,7 @@ pub fn decode_call(data: &[u8]) -> Result<Call<'_>, ProtocolError> {
 
     Ok(Call {
         xid: message.xid,
-        inner: call,
+        header: call,
         arg: rest,
     })
 }
