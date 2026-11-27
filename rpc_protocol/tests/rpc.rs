@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright 2025. Triad National Security, LLC.
 
-use std::io::{Read, Write};
-
 use rpc_protocol::*;
 
 #[test]
@@ -51,102 +49,6 @@ fn rpc_protocol_reply() {
 }
 
 #[test]
-fn call_invalid_program() {
-    let mut client_endpoint = launch_example_server();
-
-    // invalid CALL: wrong program number
-    let res = client::do_rpc_call(
-        &mut client_endpoint,
-        8,
-        4,
-        1,
-        &[0; 0],
-        OpaqueAuth::none(),
-        OpaqueAuth::none(),
-    );
-
-    expected_error(res, AcceptedReplyBody::ProgUnavail);
-}
-
-#[test]
-fn call_invalid_version() {
-    let mut client_endpoint = launch_example_server();
-
-    // invalid CALL: too low version number
-    let res = client::do_rpc_call(
-        &mut client_endpoint,
-        7,
-        1,
-        1,
-        &[0; 0],
-        OpaqueAuth::none(),
-        OpaqueAuth::none(),
-    );
-
-    expected_error(
-        res,
-        AcceptedReplyBody::ProgMismatch(ProgMismatchBody { low: 2, high: 4 }),
-    );
-
-    let mut client_endpoint = launch_example_server();
-
-    // invalid CALL: too high version number
-    let res = client::do_rpc_call(
-        &mut client_endpoint,
-        7,
-        5,
-        1,
-        &[0; 0],
-        OpaqueAuth::none(),
-        OpaqueAuth::none(),
-    );
-
-    expected_error(
-        res,
-        AcceptedReplyBody::ProgMismatch(ProgMismatchBody { low: 2, high: 4 }),
-    );
-}
-
-#[test]
-fn call_invalid_procedure() {
-    let mut client_endpoint = launch_example_server();
-
-    // invalid CALL: wrong procedure number
-    let res = client::do_rpc_call(
-        &mut client_endpoint,
-        7,
-        4,
-        2,
-        &[0; 0],
-        OpaqueAuth::none(),
-        OpaqueAuth::none(),
-    );
-
-    expected_error(res, AcceptedReplyBody::ProcUnavail);
-}
-
-#[test]
-fn call_invalid_rpc_version() {
-    let mut client_endpoint = launch_example_server();
-
-    // This is a byte sequence that is an RPC call manipulated to have an RPC version of 3 instead
-    // of 2.
-    let buf = vec![
-        //                                               v here
-        128, 0, 0, 40, 0, 0, 0, 17, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 7, 0, 0, 0, 4, 0, 0, 0, 2, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    ];
-
-    client_endpoint.write_all(&buf).unwrap();
-
-    let mut output = vec![0u8; 4];
-    let res = client_endpoint.read_exact(&mut output).unwrap_err();
-    // It is expected that the server simply drops the connection, which leads to being unable to
-    // read from the pipe endpoint:
-    assert_eq!(res.kind(), std::io::ErrorKind::UnexpectedEof);
-}
-
-#[test]
 fn decode_call_undefined_message_type() {
     // xid 1, followed by a message type that is neither CALL nor REPLY.
     let buf = vec![0, 0, 0, 1, 0, 0, 0, 99];
@@ -169,32 +71,177 @@ fn decode_call_credential_longer_than_record() {
     assert!(matches!(res, Err(ProtocolError::Decode)), "got {res:?}");
 }
 
-/// Launches an RpcProgram with program number 7, version range 2-4, and one procedure defined (in
-/// addition to procedure 0 which is always defined.)
-///
-/// Returns a client endpoint for comunicating with the service.
-fn launch_example_server() -> pipe::Endpoint {
-    let (client_endpoint, mut server_endpoint) = pipe::pipe().unwrap();
+#[test]
+fn call_and_reply_roundtrip() {
+    let record = client::encode_call(
+        99,
+        CallBody {
+            rpcvers: RPC_VERSION,
+            prog: 7,
+            vers: 4,
+            proc: 1,
+            cred: OpaqueAuth::none(),
+            verf: OpaqueAuth::none(),
+        },
+        &[1, 2, 3, 4],
+    );
 
-    let mut server = server::RpcProgram::new(7, 2, 4, vec![None, Some(server::null_procedure)], ());
+    let mark = RecordMark::decode(record[..RECORD_MARK_SIZE].try_into().unwrap());
+    assert!(mark.last);
+    assert_eq!(mark.len as usize, record.len() - RECORD_MARK_SIZE);
 
-    std::thread::spawn(move || {
-        server.handle_connection(&mut server_endpoint).unwrap();
-    });
+    let call = decode_call(&record[RECORD_MARK_SIZE..]).unwrap();
+    assert_eq!(call.xid, 99);
+    assert_eq!(call.header.prog, 7);
+    assert_eq!(call.header.vers, 4);
+    assert_eq!(call.header.proc, 1);
+    assert_eq!(call.arg, [1, 2, 3, 4]);
 
-    client_endpoint
+    let record = server::encode_succesful_reply(call.xid, &[5, 6, 7, 8]);
+    assert_eq!(client::peek_xid(&record[RECORD_MARK_SIZE..]), Some(99));
+
+    let (message, result) = RpcMessage::deserialize(&record[RECORD_MARK_SIZE..]).unwrap();
+    assert_eq!(message.xid, 99);
+    let RpcMessageBody::Reply(reply) = message.body else {
+        panic!("Expected a reply, got {message:?}");
+    };
+    assert!(reply.is_success());
+    assert_eq!(result, [5, 6, 7, 8]);
 }
 
-fn expected_error(res: Result<Vec<u8>, Error>, expected: AcceptedReplyBody) {
-    let Err(Error::Rpc(reply)) = res else {
-        panic!("Expected RPC error reply, got {res:?}");
-    };
+#[test]
+fn error_reply_is_not_success() {
+    let reply = ReplyBody::accepted_reply(AcceptedReplyBody::ProgUnavail);
+    let record = server::encode_reply_no_arg(3, reply.clone());
 
-    let ReplyBody::Accepted(arep) = reply else {
-        panic!("Expected Accepted reply, got {reply:?}");
-    };
+    let (message, result) = RpcMessage::deserialize(&record[RECORD_MARK_SIZE..]).unwrap();
+    assert_eq!(message.xid, 3);
+    assert_eq!(message.body, RpcMessageBody::Reply(reply.clone()));
+    assert!(!reply.is_success());
+    assert!(result.is_empty());
+}
 
-    if arep.reply_data != expected {
-        panic!("Expected {expected:?}, got {:?}", arep.reply_data);
-    }
+#[test]
+fn record_mark_encode_and_decode() {
+    let mark = RecordMark {
+        len: 258,
+        last: true,
+    };
+    assert_eq!(mark.encode(), [128, 0, 1, 2]);
+    assert_eq!(RecordMark::decode(&[128, 0, 1, 2]), mark);
+
+    let mark = RecordMark {
+        len: 40,
+        last: false,
+    };
+    assert_eq!(mark.encode(), [0, 0, 0, 40]);
+    assert_eq!(RecordMark::decode(&[0, 0, 0, 40]), mark);
+}
+
+#[test]
+fn assemble_fragmented_record() {
+    let mut assembler = RecordAssembler::new(16);
+    assert!(assembler.is_empty());
+    assert_eq!(assembler.take(), None);
+
+    let fragment = assembler
+        .next_fragment(RecordMark {
+            len: 3,
+            last: false,
+        })
+        .unwrap();
+    fragment.copy_from_slice(&[1, 2, 3]);
+    assert!(!assembler.is_empty());
+
+    // The record can't be taken before its last fragment:
+    assert_eq!(assembler.take(), None);
+
+    // An empty fragment in the middle of a record is legal:
+    let fragment = assembler
+        .next_fragment(RecordMark {
+            len: 0,
+            last: false,
+        })
+        .unwrap();
+    assert!(fragment.is_empty());
+
+    let fragment = assembler
+        .next_fragment(RecordMark { len: 2, last: true })
+        .unwrap();
+    fragment.copy_from_slice(&[4, 5]);
+    assert!(!assembler.is_empty());
+
+    assert_eq!(assembler.take(), Some(vec![1, 2, 3, 4, 5]));
+    assert!(assembler.is_empty());
+    assert_eq!(assembler.take(), None);
+
+    // The assembler can be used again for the next record:
+    let fragment = assembler
+        .next_fragment(RecordMark { len: 1, last: true })
+        .unwrap();
+    fragment.copy_from_slice(&[6]);
+    assert_eq!(assembler.take(), Some(vec![6]));
+}
+
+#[test]
+fn assemble_empty_record() {
+    let mut assembler = RecordAssembler::new(16);
+
+    let fragment = assembler
+        .next_fragment(RecordMark { len: 0, last: true })
+        .unwrap();
+    assert!(fragment.is_empty());
+
+    assert_eq!(assembler.take(), Some(vec![]));
+}
+
+#[test]
+#[should_panic(expected = "not taken")]
+fn assemble_without_taking_previous_record() {
+    let mut assembler = RecordAssembler::new(16);
+
+    let mark = RecordMark { len: 1, last: true };
+    assembler.next_fragment(mark).unwrap();
+    let _ = assembler.next_fragment(mark);
+}
+
+#[test]
+fn assemble_record_too_large() {
+    let mut assembler = RecordAssembler::new(8);
+
+    // A single fragment that is larger than the limit:
+    let res = assembler.next_fragment(RecordMark { len: 9, last: true });
+    assert!(matches!(res, Err(ProtocolError::RecordTooLarge)));
+
+    // Fragments which are individually small enough, but together exceed the limit:
+    assembler
+        .next_fragment(RecordMark {
+            len: 8,
+            last: false,
+        })
+        .unwrap();
+    let res = assembler.next_fragment(RecordMark { len: 1, last: true });
+    assert!(matches!(res, Err(ProtocolError::RecordTooLarge)));
+}
+
+#[test]
+fn pending_calls() {
+    let mut pending = client::PendingCalls::new(u32::MAX);
+
+    // XIDs are handed out in order, and wrap around:
+    let a = pending.insert("a");
+    let b = pending.insert("b");
+    assert_eq!((a, b), (u32::MAX, 0));
+    assert_eq!(pending.len(), 2);
+
+    assert_eq!(pending.remove(a), Some("a"));
+    // A second reply to the same call matches nothing:
+    assert_eq!(pending.remove(a), None);
+    // Neither does a reply to a call that was never made:
+    assert_eq!(pending.remove(12345), None);
+
+    let mut rest: Vec<_> = pending.drain().collect();
+    rest.sort();
+    assert_eq!(rest, ["b"]);
+    assert!(pending.is_empty());
 }

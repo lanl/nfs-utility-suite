@@ -1,0 +1,14 @@
+[package]
+name = "rpc_blocking"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "rpc_blocking"
+path = "src/lib.rs"
+doctest = false
+
+[dependencies]
+log = "0.4.27"
+nix = { version = "0.30.1", features = ["socket"] }
+rpc_protocol = { path = "../rpc_protocol" }

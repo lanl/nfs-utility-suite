@@ -6,10 +6,7 @@ pub mod server;
 
 use log::*;
 
-use std::{
-    fmt,
-    io::{Read, Write},
-};
+use std::fmt;
 
 include!(concat!(env!("OUT_DIR"), "/rpc_prot.rs"));
 
@@ -21,53 +18,16 @@ pub use rpc_prot::{
 use crate::rpc_prot::authsys_parms;
 
 /// Only supported version of the RPC Protocol
-const RPC_VERSION: u32 = 2;
+pub const RPC_VERSION: u32 = 2;
 
-/// The possible errors that can arise from trying to read or write an RPC call or reply.
-#[derive(Debug)]
-pub enum Error {
-    /// Protocol errors are always returned by the RPC server implementation before
-    /// even invoking procedure-specific code.
-    Protocol(ProtocolError),
-
-    /// Some RPC errors are returned by the server implementation (for example, unknown procedure),
-    /// and some are returned by the procedure implementation (for example garbage args, or
-    /// internal error like ENOMEM).
-    ///
-    // XXX: would it make sense to separate out the library-generated and user-generated errors
-    // into separate variants?
-    Rpc(ReplyBody),
-
-    /// Errors returned by I/O failures.
-    Io(std::io::Error),
-}
-
-impl std::error::Error for Error {}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::Protocol(e) => write!(f, "Protocol error: {e}"),
-            Self::Rpc(e) => write!(f, "RPC error: {e:?}"),
-            Self::Io(e) => write!(f, "IO error: {e}"),
-        }
-    }
-}
-
-impl From<std::io::Error> for Error {
-    fn from(e: std::io::Error) -> Self {
-        Self::Io(e)
-    }
-}
-
+/// The possible errors that can arise from trying to decode an RPC call or reply.
 #[derive(Debug)]
 pub enum ProtocolError {
     /// Generic decoding error:
     Decode,
 
-    /// Received a fragmented message. TODO: once support for message fragments is included, this
-    /// variant can be removed.
-    MessageFragment,
+    /// A record's fragments add up to more than the receiver is willing to buffer:
+    RecordTooLarge,
 
     /// Message auth type is not supported by this library:
     UnsupportedAuth,
@@ -83,7 +43,7 @@ impl fmt::Display for ProtocolError {
             "{}",
             match self {
                 Self::Decode => "Error decoding",
-                Self::MessageFragment => "Received a fragmented message",
+                Self::RecordTooLarge => "Record exceeds the maximum record size",
                 Self::UnsupportedAuth => "Unsupported authorization mechanism",
                 Self::WrongRpcVersion => "Only RPC Protocol version 2 is supported",
             }
@@ -94,38 +54,15 @@ impl fmt::Display for ProtocolError {
 /// A `call` holds the data needed to respond to an RPC call.
 #[derive(Debug)]
 pub struct Call<'a> {
-    xid: u32,
-    inner: CallBody,
+    /// Transaction ID of this call.
+    pub xid: u32,
+
+    /// The call's header, which holds the program, version and procedure numbers (e.g., 100003,
+    /// 3, and 1 for GETATTR in NFS v3), and the credential and verifier.
+    pub header: CallBody,
 
     /// The call's encoded argument.
     pub arg: &'a [u8],
-}
-
-impl Call<'_> {
-    /// Transaction ID of this call.
-    pub fn get_xid(&self) -> u32 {
-        self.xid
-    }
-
-    /// Program number, e.g., 10005 for NFS v3.
-    pub fn get_program(&self) -> u32 {
-        self.inner.prog
-    }
-
-    /// Version number, e.g., 3 for NFS v3.
-    pub fn get_version(&self) -> u32 {
-        self.inner.vers
-    }
-
-    /// Procedure number, e.g., 1 for GETATTR in NFS v3.
-    pub fn get_procedure(&self) -> u32 {
-        self.inner.proc
-    }
-
-    /// Credential
-    pub fn get_credential(&self) -> &OpaqueAuth {
-        &self.inner.cred
-    }
 }
 
 /// Given an encoded RPC call in `data` (including both the call header and the encoded arguments),
@@ -166,7 +103,7 @@ pub fn decode_call(data: &[u8]) -> Result<Call<'_>, ProtocolError> {
 
     Ok(Call {
         xid: message.xid,
-        inner: call,
+        header: call,
         arg: rest,
     })
 }
@@ -174,39 +111,162 @@ pub fn decode_call(data: &[u8]) -> Result<Call<'_>, ProtocolError> {
 /// Given a buffer that contains an encoded message, prefaced by a dummy record mark, update that
 /// record mark based on the actual length of the message.
 fn update_record_mark(buf: &mut [u8]) {
-    // size of message, not including the 4 bytes for the record mark itself:
-    let message_size = u32::try_from(buf.len() - 4).unwrap();
-    let record_mark: u32 = message_size | (1 << 31);
-    buf[..4].copy_from_slice(&record_mark.to_be_bytes());
+    // size of message, not including the bytes for the record mark itself:
+    let message_size = u32::try_from(buf.len() - RECORD_MARK_SIZE).unwrap();
+    let record_mark = RecordMark {
+        len: message_size,
+        last: true,
+    };
+    buf[..RECORD_MARK_SIZE].copy_from_slice(&record_mark.encode());
 }
 
-/// Reads 4 bytes from the given stream, and interprets them as a record mark.
-fn stream_record_mark<S: Read>(stream: &mut S) -> Result<u32, crate::Error> {
-    let mut record_mark_bytes: [u8; 4] = [0; 4];
+/// A default limit on the size of a reassembled record, for callers that have no better number.
+pub const DEFAULT_MAX_RECORD_SIZE: usize = 16 * 1024 * 1024;
 
-    stream.read_exact(&mut record_mark_bytes).inspect_err(|e| {
-        if e.kind() != std::io::ErrorKind::UnexpectedEof {
-            eprintln!("Error getting record mark: error reading from stream: {e}");
+/// Size in bytes of an encoded record mark.
+pub const RECORD_MARK_SIZE: usize = 4;
+
+/// The bit of a record mark which is set if the fragment is the last one of its record. The
+/// remaining bits hold the length of the fragment.
+const LAST_FRAGMENT: u32 = 1 << 31;
+
+/// The header that precedes every record fragment on a stream transport.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RecordMark {
+    /// Length of the fragment that follows the mark.
+    pub len: u32,
+
+    /// Whether this is the last fragment of its record.
+    pub last: bool,
+}
+
+impl RecordMark {
+    pub fn decode(mark: &[u8; RECORD_MARK_SIZE]) -> Self {
+        let mark = u32::from_be_bytes(*mark);
+
+        Self {
+            len: mark & !LAST_FRAGMENT,
+            last: mark & LAST_FRAGMENT != 0,
         }
-    })?;
-
-    decode_record_mark(&record_mark_bytes)
-}
-
-/// Returns the length indicated by the record mark.
-///
-/// If the record mark indicates that the record is fragmented, returns an error as this
-/// implementation does not yet support record fragments.
-///
-/// Unlike the `stream_` variant, this can't return an I/O error.
-pub fn decode_record_mark(mark: &[u8; 4]) -> Result<u32, crate::Error> {
-    let record_mark = u32::from_be_bytes(*mark);
-
-    if (record_mark & (1 << 31)) == 0 {
-        return Err(Error::Protocol(ProtocolError::MessageFragment));
     }
 
-    Ok(record_mark & (!(1 << 31)))
+    /// `len` must fit in 31 bits, since the remaining bit is the last fragment flag.
+    ///
+    // TODO: this is not checked, so a larger `len` is silently encoded as a shorter fragment with
+    // the last fragment flag set. Assert that `len` fits, and have `update_record_mark()` deal
+    // with messages that are too large for one fragment.
+    pub fn encode(self) -> [u8; RECORD_MARK_SIZE] {
+        let mut mark = self.len;
+        if self.last {
+            mark |= LAST_FRAGMENT;
+        }
+
+        mark.to_be_bytes()
+    }
+}
+
+/// Reassembles a record out of its fragments.
+///
+/// The caller does the reading. For each fragment it decodes the record mark, passes it to
+/// `next_fragment()`, and fills the returned slice with the fragment's bytes. Once that has been
+/// done for the last fragment of the record, `take()` returns the complete record:
+///
+/// ```ignore
+/// loop {
+///     let mark = RecordMark::decode(&read_mark()?);
+///     read_exact(assembler.next_fragment(mark)?)?;
+///     if let Some(record) = assembler.take() {
+///         return Ok(record);
+///     }
+/// }
+/// ```
+pub struct RecordAssembler {
+    max_size: usize,
+    record: Vec<u8>,
+    state: AssemblerState,
+}
+
+#[derive(PartialEq)]
+enum AssemblerState {
+    /// No fragment of the next record has been seen yet.
+    Empty,
+
+    /// Some fragments of the record have been seen, but not the last one.
+    Partial,
+
+    /// The last fragment of the record has been seen.
+    Complete,
+}
+
+impl RecordAssembler {
+    /// `max_size` bounds the total size of a record, so that a peer can't make the caller
+    /// allocate an arbitrary amount of memory.
+    pub fn new(max_size: usize) -> Self {
+        Self {
+            max_size,
+            record: Vec::new(),
+            state: AssemblerState::Empty,
+        }
+    }
+
+    /// Makes room for the fragment described by `mark` and returns the slice that the caller must
+    /// fill with that fragment's bytes.
+    ///
+    /// A complete record must be removed with `take()` before starting on the next one. It is a
+    /// bug in the caller to not do so, and this panics in that case.
+    pub fn next_fragment(&mut self, mark: RecordMark) -> Result<&mut [u8], ProtocolError> {
+        assert!(
+            self.state != AssemblerState::Complete,
+            "the previous record was not taken"
+        );
+
+        let start = self.record.len();
+        let len = mark.len as usize;
+
+        if len > self.max_size - start {
+            return Err(ProtocolError::RecordTooLarge);
+        }
+
+        self.state = if mark.last {
+            AssemblerState::Complete
+        } else {
+            AssemblerState::Partial
+        };
+        self.record.resize(start + len, 0);
+
+        Ok(&mut self.record[start..])
+    }
+
+    /// If the last fragment of the record has been passed to `next_fragment()`, returns the
+    /// record and resets the assembler for the next one. Otherwise, returns None.
+    pub fn take(&mut self) -> Option<Vec<u8>> {
+        if self.state != AssemblerState::Complete {
+            return None;
+        }
+
+        self.state = AssemblerState::Empty;
+        Some(std::mem::take(&mut self.record))
+    }
+
+    /// True if no fragment has been passed to `next_fragment()` since the last record was taken.
+    /// If the stream ends when this is false, then a record was truncated.
+    pub fn is_empty(&self) -> bool {
+        self.state == AssemblerState::Empty
+    }
+}
+
+impl ReplyBody {
+    /// Whether this is an accepted, succesful reply, which is the only kind of reply that is
+    /// followed by the result of the procedure.
+    pub fn is_success(&self) -> bool {
+        matches!(
+            self,
+            ReplyBody::Accepted(AcceptedReply {
+                reply_data: AcceptedReplyBody::Success(_),
+                ..
+            })
+        )
+    }
 }
 
 impl OpaqueAuth {
@@ -225,50 +285,8 @@ impl OpaqueAuth {
     }
 }
 
-/// Get a "unique" XID. TODO: make a real implementation for this function...
-fn get_xid() -> u32 {
-    17
-}
-
 /// Returns a buffer with space for a record mark already allocated, but a dummy value (0) encoded
 /// since the length of the message isn't known yet.
 fn buf_with_dummy_record_mark() -> Vec<u8> {
-    vec![0, 0, 0, 0]
-}
-
-/// An "pipe", constructed using socketpair(2), that can be used for testing client and
-/// server behavior.
-pub mod pipe {
-    use nix::sys::socket::{socketpair, AddressFamily, SockFlag, SockType};
-
-    pub struct Endpoint {
-        fd: std::os::fd::OwnedFd,
-    }
-
-    pub fn pipe() -> std::io::Result<(Endpoint, Endpoint)> {
-        let (a, b) = socketpair(
-            AddressFamily::Unix,
-            SockType::Stream,
-            None,
-            SockFlag::empty(),
-        )?;
-
-        Ok((Endpoint { fd: a }, Endpoint { fd: b }))
-    }
-
-    impl std::io::Read for Endpoint {
-        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-            Ok(nix::unistd::read(&self.fd, buf)?)
-        }
-    }
-
-    impl std::io::Write for Endpoint {
-        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-            Ok(nix::unistd::write(&self.fd, buf)?)
-        }
-
-        fn flush(&mut self) -> std::io::Result<()> {
-            Ok(())
-        }
-    }
+    vec![0; RECORD_MARK_SIZE]
 }

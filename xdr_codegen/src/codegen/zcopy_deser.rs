@@ -163,14 +163,14 @@ impl XdrType {
         let unwrap_method = if fallible_parent { "?" } else { ".unwrap()" };
 
         if let Some(found_size) = self.size(tab) {
-            buf.add_line(&format!("Ok({})", found_size));
+            buf.add_line(&format!("Ok({found_size})"));
         } else {
             // typedef case already handled, non-typedefs follow:
             let (method, fallible) = self.deserialize_method_zcopy(tab);
 
             if let Some(cache_name) = member_name {
                 buf.block_statement(
-                    &format!("if let Some(cached) = {}.get()", cache_name),
+                    &format!("if let Some(cached) = {cache_name}.get()"),
                     |buf| {
                         buf.add_line("return cached.get_width();");
                     },
@@ -217,10 +217,10 @@ impl XdrType {
                         "let mut it = xdr_lib::LinkedListIter::<'a, {}>::new(_input, {}, {}, {});",
                         self.as_zcopy_deser_type_name(tab),
                         self.size(tab)
-                            .map(|v| format!("Some({})", v))
+                            .map(|v| format!("Some({v})"))
                             .unwrap_or("None".to_string()),
                         if let Some(cache_name) = cache_name {
-                            format!("Some(&self.{}_width)", cache_name)
+                            format!("Some(&self.{cache_name}_width)")
                         } else {
                             "None".to_string()
                         },
@@ -295,10 +295,10 @@ impl XdrType {
                 "xdr_lib::LinkedListIter::<'a, {}>::new(_input, {}, {}, {})",
                 self.as_zcopy_deser_type_name(tab),
                 self.size(tab)
-                    .map(|v| format!("Some({})", v))
+                    .map(|v| format!("Some({v})"))
                     .unwrap_or("None".to_string()),
                 if let Some(cache_name) = cache_name {
-                    format!("Some(&self.{}_width)", cache_name)
+                    format!("Some(&self.{cache_name}_width)")
                 } else {
                     "None".to_string()
                 },
@@ -374,11 +374,9 @@ impl ValidatedStruct {
                 if member.is_varlen_reader(tab) {
                     let typename = member.as_zcopy_dser_type_name(tab);
 
-                    buf.add_line(&format!("{}: {},", dep, typename));
-                } else {
-                    if !self.member_is_self_referential(member, tab) {
-                        buf.add_line(&format!("{}_width: usize,", dep));
-                    }
+                    buf.add_line(&format!("{dep}: {typename},"));
+                } else if !self.member_is_self_referential(member, tab) {
+                    buf.add_line(&format!("{dep}_width: usize,"));
                 }
             }
 
@@ -408,8 +406,8 @@ impl ValidatedStruct {
                             buf.add_line("let _input = &buf.get(off..).ok_or(xdr_lib::DeserializeError)?;");
                             if nd.is_varlen_reader(tab) {
                                     let typename = nd.as_zcopy_dser_type_name(tab);
-                                    let typename = typename.strip_suffix("<'a>").map(|rest| format!("{}::<'a>", rest)).unwrap_or(typename.to_string());
-                                    let typename = typename.strip_prefix("Option").map(|rest| format!("Option::{}", rest)).unwrap_or(typename.to_string());
+                                    let typename = typename.strip_suffix("<'a>").map(|rest| format!("{rest}::<'a>")).unwrap_or(typename.to_string());
+                                    let typename = typename.strip_prefix("Option").map(|rest| format!("Option::{rest}")).unwrap_or(typename.to_string());
 
                                     buf.add_line(&format!("let {} = {}::from_buf(unsafe {{ buf.get_unchecked(off..) }})?;", nd.name, typename));
 
@@ -599,12 +597,10 @@ impl ValidatedStruct {
                             }
                             _ => unreachable!(),
                         };
+                    } else if member.is_varlen_reader(tab) {
+                        buf.add_line(&format!("self.{}.get_width()", member.name));
                     } else {
-                        if member.is_varlen_reader(tab) {
-                            buf.add_line(&format!("self.{}.get_width()", member.name));
-                        } else {
-                            buf.add_line(&format!("Ok(self.{}_width)", member.name));
-                        }
+                        buf.add_line(&format!("Ok(self.{}_width)", member.name));
                     }
                 },
             );
@@ -698,8 +694,7 @@ impl Array {
 
         if let Some(elem_width) = self.elem_size(tab) {
             buf.add_line(&format!(
-                "let required = xdr_lib::padded(length * {}usize)? + _array_count_size;",
-                elem_width
+                "let required = xdr_lib::padded(length * {elem_width}usize)? + _array_count_size;"
             ));
 
             buf.add_line("Ok(required)");
@@ -868,8 +863,7 @@ impl ValidatedUnionBoolBody {
                     let size = self.true_arm.size(tab);
                     if let Some(size) = size {
                         buf.add_line(&format!(
-                            "if _input.len() < {} {{ return Err(xdr_lib::DeserializeError) }}",
-                            size,
+                            "if _input.len() < {size} {{ return Err(xdr_lib::DeserializeError) }}",
                         ));
                     }
 
@@ -898,7 +892,7 @@ impl ValidatedUnionBoolBody {
             buf.add_line("None => Ok(0),");
             buf.code_block("Some(_inner) =>", |buf| {
                 if let Some(static_size) = self.true_arm.size(tab) {
-                    buf.add_line(&format!("Ok({})", static_size));
+                    buf.add_line(&format!("Ok({static_size})"));
                 } else if self.true_arm.is_varlen_reader(tab) {
                     buf.add_line("_inner.get_width()");
                 } else {
@@ -993,8 +987,7 @@ impl ValidatedUnionEnumBody {
 
                             if let Some(size) = size{
                                 buf.add_line(&format!(
-                                    "if _input.len() < {} {{ return Err(xdr_lib::DeserializeError) }}",
-                                    size,
+                                    "if _input.len() < {size} {{ return Err(xdr_lib::DeserializeError) }}",
                                 ));
                             }
 
@@ -1024,8 +1017,7 @@ impl ValidatedUnionEnumBody {
 
                             if let Some(size) = size{
                                 buf.add_line(&format!(
-                                    "if _input.len() < {} {{ return Err(xdr_lib::DeserializeError) }}",
-                                    size,
+                                    "if _input.len() < {size} {{ return Err(xdr_lib::DeserializeError) }}",
                                 ));
                             }
 
@@ -1055,14 +1047,14 @@ impl ValidatedUnionEnumBody {
                 let arm_name = ValidatedUnionEnumBody::arm_name(&arm.0);
                 match &arm.1 {
                     Declaration::Void => {
-                        buf.code_block(&format!("{}Ret::{} => ", u_name, arm_name), |buf| {
+                        buf.code_block(&format!("{u_name}Ret::{arm_name} => "), |buf| {
                             buf.add_line("Ok(0)");
                         });
                     }
                     Declaration::Named(n) => {
-                        buf.code_block(&format!("{}Ret::{}(_val) => ", u_name, arm_name), |buf| {
+                        buf.code_block(&format!("{u_name}Ret::{arm_name}(_val) => "), |buf| {
                             if let Some(width) = n.size(tab) {
-                                buf.add_line(&format!("Ok({})", width));
+                                buf.add_line(&format!("Ok({width})"));
                             } else {
                                 buf.add_line("_val.get_width()")
                             }
@@ -1076,9 +1068,9 @@ impl ValidatedUnionEnumBody {
                         buf.add_line("_ => Ok(0),");
                     }
                     Declaration::Named(n) => {
-                        buf.code_block(&format!("{}Ret::Default(_val) =>", u_name), |buf| {
+                        buf.code_block(&format!("{u_name}Ret::Default(_val) =>"), |buf| {
                             if let Some(width) = n.size(tab) {
-                                buf.add_line(&format!("Ok({})", width));
+                                buf.add_line(&format!("Ok({width})"));
                             } else {
                                 buf.add_line("&_val.get_width()")
                             }

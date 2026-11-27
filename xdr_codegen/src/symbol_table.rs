@@ -41,6 +41,6 @@ impl ValidatedSymbolTable {
     pub fn lookup_size(&self, name: &str) -> &DefinitionSize {
         self.size_tab
             .get(name)
-            .unwrap_or_else(|| panic!("could not find size information for type \"{}\"", name))
+            .unwrap_or_else(|| panic!("could not find size information for type \"{name}\""))
     }
 }

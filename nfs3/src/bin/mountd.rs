@@ -3,6 +3,7 @@
 
 use std::net::TcpListener;
 
+use rpc_blocking::server::run_blocking_tcp_server;
 use rpc_protocol::{server::*, Call};
 
 use nfs3::{mount_proto::procedures::*, mount_proto::*};
@@ -51,7 +52,7 @@ fn main() {
         );
 
         let listener = TcpListener::bind("0.0.0.0:20048").unwrap();
-        server.run_blocking_tcp_server(listener);
+        run_blocking_tcp_server(&mut server, listener);
     });
 
     if let Err(e) = announce_self() {
@@ -67,7 +68,7 @@ fn export(_call: &Call, state: &mut MountState) -> RpcResult {
 }
 
 /// Tell the RPCBIND server that the mount service is now running:
-fn announce_self() -> Result<(), rpc_protocol::Error> {
+fn announce_self() -> Result<(), rpc_blocking::Error> {
     let service = rpcbind::RpcService {
         prog: MOUNT_PROGRAM,
         vers: MOUNT_V3::VERSION,

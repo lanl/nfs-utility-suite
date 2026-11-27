@@ -10,7 +10,8 @@ use clap::{builder::PossibleValue, Args, Parser, Subcommand, ValueEnum};
 
 use ::nfs3::{nfs3_xdr::procedures::*, nfs3_xdr::*};
 use nfs3::{nfs3_xdr::Sattr, *};
-use rpc_protocol::{client::*, rpc_prot::authsys_parms, OpaqueAuth};
+use rpc_blocking::client::*;
+use rpc_protocol::{rpc_prot::authsys_parms, CallBody, OpaqueAuth, RPC_VERSION};
 
 #[derive(ValueEnum, Clone, Debug)]
 enum Sec {
@@ -488,12 +489,15 @@ fn main() -> io::Result<()> {
 
         let res = do_rpc_call(
             &mut stream,
-            mount_proto::procedures::MOUNT_PROGRAM,
-            mount_proto::procedures::MOUNT_V3::VERSION,
-            mount_proto::procedures::MOUNT_V3::MOUNTPROC3_MNT,
+            CallBody {
+                rpcvers: RPC_VERSION,
+                prog: mount_proto::procedures::MOUNT_PROGRAM,
+                vers: mount_proto::procedures::MOUNT_V3::VERSION,
+                proc: mount_proto::procedures::MOUNT_V3::MOUNTPROC3_MNT,
+                cred: sec_cred.clone(),
+                verf: sec_verf.clone(),
+            },
             &mount_arg.serialize_alloc(),
-            sec_cred.clone(),
-            sec_verf.clone(),
         )
         .expect("mount RPC error");
 
@@ -775,12 +779,15 @@ fn do_getattr(
 
     let bytes = do_rpc_call(
         stream,
-        NFS_PROGRAM,
-        NFS_V3::VERSION,
-        NFS_V3::GETATTR,
+        CallBody {
+            rpcvers: RPC_VERSION,
+            prog: NFS_PROGRAM,
+            vers: NFS_V3::VERSION,
+            proc: NFS_V3::GETATTR,
+            cred,
+            verf,
+        },
         &arg,
-        cred,
-        verf,
     )
     .expect("getattr rpc failure");
 
@@ -808,12 +815,15 @@ fn do_lookup(
 
     let bytes = do_rpc_call(
         stream,
-        NFS_PROGRAM,
-        NFS_V3::VERSION,
-        NFS_V3::LOOKUP,
+        CallBody {
+            rpcvers: RPC_VERSION,
+            prog: NFS_PROGRAM,
+            vers: NFS_V3::VERSION,
+            proc: NFS_V3::LOOKUP,
+            cred,
+            verf,
+        },
         &arg,
-        cred,
-        verf,
     )
     .expect("lookup rpc failure");
 
@@ -837,12 +847,15 @@ fn do_readlink(
 
     let bytes = do_rpc_call(
         stream,
-        NFS_PROGRAM,
-        NFS_V3::VERSION,
-        NFS_V3::READLINK,
+        CallBody {
+            rpcvers: RPC_VERSION,
+            prog: NFS_PROGRAM,
+            vers: NFS_V3::VERSION,
+            proc: NFS_V3::READLINK,
+            cred,
+            verf,
+        },
         &arg,
-        cred,
-        verf,
     )
     .expect("readlink rpc failure");
 
@@ -894,12 +907,15 @@ fn do_access(
 
     let bytes = do_rpc_call(
         stream,
-        NFS_PROGRAM,
-        NFS_V3::VERSION,
-        NFS_V3::ACCESS,
+        CallBody {
+            rpcvers: RPC_VERSION,
+            prog: NFS_PROGRAM,
+            vers: NFS_V3::VERSION,
+            proc: NFS_V3::ACCESS,
+            cred,
+            verf,
+        },
         &arg,
-        cred,
-        verf,
     )
     .expect("access rpc failure");
 
@@ -927,12 +943,15 @@ fn do_read(
 
     let bytes = do_rpc_call(
         stream,
-        NFS_PROGRAM,
-        NFS_V3::VERSION,
-        NFS_V3::READ,
+        CallBody {
+            rpcvers: RPC_VERSION,
+            prog: NFS_PROGRAM,
+            vers: NFS_V3::VERSION,
+            proc: NFS_V3::READ,
+            cred,
+            verf,
+        },
         &arg,
-        cred,
-        verf,
     )
     .expect("read rpc failure");
 
@@ -967,12 +986,15 @@ fn do_write(
 
     let bytes = do_rpc_call(
         stream,
-        NFS_PROGRAM,
-        NFS_V3::VERSION,
-        NFS_V3::WRITE,
+        CallBody {
+            rpcvers: RPC_VERSION,
+            prog: NFS_PROGRAM,
+            vers: NFS_V3::VERSION,
+            proc: NFS_V3::WRITE,
+            cred,
+            verf,
+        },
         &arg,
-        cred,
-        verf,
     )
     .expect("write rpc failure");
 
@@ -1006,12 +1028,15 @@ fn do_sattr(
 
     let bytes = do_rpc_call(
         stream,
-        NFS_PROGRAM,
-        NFS_V3::VERSION,
-        NFS_V3::SETATTR,
+        CallBody {
+            rpcvers: RPC_VERSION,
+            prog: NFS_PROGRAM,
+            vers: NFS_V3::VERSION,
+            proc: NFS_V3::SETATTR,
+            cred,
+            verf,
+        },
         &arg,
-        cred,
-        verf,
     )
     .expect("sattr rpc failure");
 
@@ -1041,12 +1066,15 @@ fn do_create_unchecked(
 
     let bytes = do_rpc_call(
         stream,
-        NFS_PROGRAM,
-        NFS_V3::VERSION,
-        NFS_V3::CREATE,
+        CallBody {
+            rpcvers: RPC_VERSION,
+            prog: NFS_PROGRAM,
+            vers: NFS_V3::VERSION,
+            proc: NFS_V3::CREATE,
+            cred,
+            verf,
+        },
         &arg,
-        cred,
-        verf,
     )
     .expect("create rpc failure");
 
@@ -1076,12 +1104,15 @@ fn do_create_guarded(
 
     let bytes = do_rpc_call(
         stream,
-        NFS_PROGRAM,
-        NFS_V3::VERSION,
-        NFS_V3::CREATE,
+        CallBody {
+            rpcvers: RPC_VERSION,
+            prog: NFS_PROGRAM,
+            vers: NFS_V3::VERSION,
+            proc: NFS_V3::CREATE,
+            cred,
+            verf,
+        },
         &arg,
-        cred,
-        verf,
     )
     .expect("create rpc failure");
 
@@ -1115,12 +1146,15 @@ fn do_create_exclusive(
 
     let bytes = do_rpc_call(
         stream,
-        NFS_PROGRAM,
-        NFS_V3::VERSION,
-        NFS_V3::CREATE,
+        CallBody {
+            rpcvers: RPC_VERSION,
+            prog: NFS_PROGRAM,
+            vers: NFS_V3::VERSION,
+            proc: NFS_V3::CREATE,
+            cred,
+            verf: sec_verf,
+        },
         &arg,
-        cred,
-        sec_verf,
     )
     .expect("create rpc failure");
 
@@ -1150,12 +1184,15 @@ fn do_mkdir(
 
     let bytes = do_rpc_call(
         stream,
-        NFS_PROGRAM,
-        NFS_V3::VERSION,
-        NFS_V3::MKDIR,
+        CallBody {
+            rpcvers: RPC_VERSION,
+            prog: NFS_PROGRAM,
+            vers: NFS_V3::VERSION,
+            proc: NFS_V3::MKDIR,
+            cred,
+            verf,
+        },
         &arg,
-        cred,
-        verf,
     )
     .expect("mkdir rpc failure");
 
@@ -1189,12 +1226,15 @@ fn do_symlink(
 
     let bytes = do_rpc_call(
         stream,
-        NFS_PROGRAM,
-        NFS_V3::VERSION,
-        NFS_V3::SYMLINK,
+        CallBody {
+            rpcvers: RPC_VERSION,
+            prog: NFS_PROGRAM,
+            vers: NFS_V3::VERSION,
+            proc: NFS_V3::SYMLINK,
+            cred,
+            verf,
+        },
         &arg,
-        cred,
-        verf,
     )
     .expect("symlink rpc failure");
 
@@ -1257,12 +1297,15 @@ fn do_mknod(
 
     let bytes = do_rpc_call(
         stream,
-        NFS_PROGRAM,
-        NFS_V3::VERSION,
-        NFS_V3::MKNOD,
+        CallBody {
+            rpcvers: RPC_VERSION,
+            prog: NFS_PROGRAM,
+            vers: NFS_V3::VERSION,
+            proc: NFS_V3::MKNOD,
+            cred,
+            verf,
+        },
         &arg,
-        cred,
-        verf,
     )
     .expect("mknod rpc failure");
 
@@ -1290,12 +1333,15 @@ fn do_remove(
 
     let bytes = do_rpc_call(
         stream,
-        NFS_PROGRAM,
-        NFS_V3::VERSION,
-        NFS_V3::REMOVE,
+        CallBody {
+            rpcvers: RPC_VERSION,
+            prog: NFS_PROGRAM,
+            vers: NFS_V3::VERSION,
+            proc: NFS_V3::REMOVE,
+            cred,
+            verf,
+        },
         &arg,
-        cred,
-        verf,
     )
     .expect("remove rpc failure");
 
@@ -1323,12 +1369,15 @@ fn do_rmdir(
 
     let bytes = do_rpc_call(
         stream,
-        NFS_PROGRAM,
-        NFS_V3::VERSION,
-        NFS_V3::RMDIR,
+        CallBody {
+            rpcvers: RPC_VERSION,
+            prog: NFS_PROGRAM,
+            vers: NFS_V3::VERSION,
+            proc: NFS_V3::RMDIR,
+            cred,
+            verf,
+        },
         &arg,
-        cred,
-        verf,
     )
     .expect("rmdir rpc failure");
 
@@ -1362,12 +1411,15 @@ fn do_rename(
 
     let bytes = do_rpc_call(
         stream,
-        NFS_PROGRAM,
-        NFS_V3::VERSION,
-        NFS_V3::RENAME,
+        CallBody {
+            rpcvers: RPC_VERSION,
+            prog: NFS_PROGRAM,
+            vers: NFS_V3::VERSION,
+            proc: NFS_V3::RENAME,
+            cred,
+            verf,
+        },
         &arg,
-        cred,
-        verf,
     )
     .expect("rename rpc failure");
 
@@ -1397,12 +1449,15 @@ fn do_link(
 
     let bytes = do_rpc_call(
         stream,
-        NFS_PROGRAM,
-        NFS_V3::VERSION,
-        NFS_V3::LINK,
+        CallBody {
+            rpcvers: RPC_VERSION,
+            prog: NFS_PROGRAM,
+            vers: NFS_V3::VERSION,
+            proc: NFS_V3::LINK,
+            cred,
+            verf,
+        },
         &arg,
-        cred,
-        verf,
     )
     .expect("link rpc failure");
 
@@ -1434,12 +1489,15 @@ fn do_readdir(
 
     let bytes = do_rpc_call(
         stream,
-        NFS_PROGRAM,
-        NFS_V3::VERSION,
-        NFS_V3::READDIR,
+        CallBody {
+            rpcvers: RPC_VERSION,
+            prog: NFS_PROGRAM,
+            vers: NFS_V3::VERSION,
+            proc: NFS_V3::READDIR,
+            cred,
+            verf,
+        },
         &arg,
-        cred,
-        verf,
     )
     .expect("readdir rpc failure");
 
@@ -1474,12 +1532,15 @@ fn do_readdirplus(
 
     let bytes = do_rpc_call(
         stream,
-        NFS_PROGRAM,
-        NFS_V3::VERSION,
-        NFS_V3::READDIRPLUS,
+        CallBody {
+            rpcvers: RPC_VERSION,
+            prog: NFS_PROGRAM,
+            vers: NFS_V3::VERSION,
+            proc: NFS_V3::READDIRPLUS,
+            cred,
+            verf,
+        },
         &arg,
-        cred,
-        verf,
     )
     .expect("readdirplus rpc failure");
 
@@ -1503,12 +1564,15 @@ fn do_fsstat(
 
     let bytes = do_rpc_call(
         stream,
-        NFS_PROGRAM,
-        NFS_V3::VERSION,
-        NFS_V3::FSSTAT,
+        CallBody {
+            rpcvers: RPC_VERSION,
+            prog: NFS_PROGRAM,
+            vers: NFS_V3::VERSION,
+            proc: NFS_V3::FSSTAT,
+            cred,
+            verf,
+        },
         &arg,
-        cred,
-        verf,
     )
     .expect("fsstat rpc failure");
 
@@ -1532,12 +1596,15 @@ fn do_fsinfo(
 
     let bytes = do_rpc_call(
         stream,
-        NFS_PROGRAM,
-        NFS_V3::VERSION,
-        NFS_V3::FSINFO,
+        CallBody {
+            rpcvers: RPC_VERSION,
+            prog: NFS_PROGRAM,
+            vers: NFS_V3::VERSION,
+            proc: NFS_V3::FSINFO,
+            cred,
+            verf,
+        },
         &arg,
-        cred,
-        verf,
     )
     .expect("fsinfo rpc failure");
 
@@ -1561,12 +1628,15 @@ fn do_pathconf(
 
     let bytes = do_rpc_call(
         stream,
-        NFS_PROGRAM,
-        NFS_V3::VERSION,
-        NFS_V3::PATHCONF,
+        CallBody {
+            rpcvers: RPC_VERSION,
+            prog: NFS_PROGRAM,
+            vers: NFS_V3::VERSION,
+            proc: NFS_V3::PATHCONF,
+            cred,
+            verf,
+        },
         &arg,
-        cred,
-        verf,
     )
     .expect("pathconf rpc failure");
 
@@ -1594,12 +1664,15 @@ fn do_commit(
 
     let bytes = do_rpc_call(
         stream,
-        NFS_PROGRAM,
-        NFS_V3::VERSION,
-        NFS_V3::COMMIT,
+        CallBody {
+            rpcvers: RPC_VERSION,
+            prog: NFS_PROGRAM,
+            vers: NFS_V3::VERSION,
+            proc: NFS_V3::COMMIT,
+            cred,
+            verf,
+        },
         &arg,
-        cred,
-        verf,
     )
     .expect("commit rpc failure");
 

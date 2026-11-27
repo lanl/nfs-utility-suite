@@ -339,7 +339,7 @@ impl XdrUnionEnumBody {
         };
 
         let discriminant = tab.lookup_definition(discriminant_name);
-        let all_possible: HashSet<String> = match discriminant {
+        let variants: Vec<String> = match discriminant {
             ValidatedDefinition::Enum(xdr_enum) => xdr_enum
                 .variants
                 .iter()
@@ -349,6 +349,7 @@ impl XdrUnionEnumBody {
                 todo!("we currently do not support discriminant types outside of enum for our enum discriminant")
             }
         };
+        let all_possible: HashSet<String> = variants.iter().cloned().collect();
         let mut left = all_possible.clone();
 
         for (val, _decl) in self.arms.iter() {
@@ -361,16 +362,12 @@ impl XdrUnionEnumBody {
                 }
                 Value::Name(value_name) => {
                     if !all_possible.contains(value_name) {
-                        panic!(
-                            "{}: unknown enum type for {}: {}",
-                            u_name, discriminant_name, value_name
-                        )
+                        panic!("{u_name}: unknown enum type for {discriminant_name}: {value_name}")
                     }
 
                     if !left.remove(value_name) {
                         panic!(
-                            "{}: enum variant {}::{} seems to be a duplicate case",
-                            u_name, discriminant_name, value_name
+                            "{u_name}: enum variant {discriminant_name}::{value_name} seems to be a duplicate case"
                         )
                     }
                 }
@@ -378,8 +375,12 @@ impl XdrUnionEnumBody {
         }
 
         if let Some(default_arm) = self.default_arm.as_ref() {
-            self.arms
-                .extend(left.drain().map(|s| (Value::Name(s), default_arm.clone())));
+            self.arms.extend(
+                variants
+                    .into_iter()
+                    .filter(|variant| left.contains(variant))
+                    .map(|variant| (Value::Name(variant), default_arm.clone())),
+            );
         }
 
         let mut arms_iter = self.arms.iter();
@@ -402,7 +403,7 @@ impl XdrUnionEnumBody {
                     }
                 }
                 None => {
-                    panic!("union {} does not have any arms!", u_name)
+                    panic!("union {u_name} does not have any arms!")
                 }
             }
         };

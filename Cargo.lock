@@ -111,6 +111,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72f5acc6cb2ba439de613abc23857ec3d78374d8ed5ac84e9d11336e87da8649"
 
 [[package]]
+name = "bytes"
+version = "1.12.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "776dfebd015e2d8732c684a2c71003674ccb49457b539b9e82151ba38e96dd7c"
+
+[[package]]
 name = "cast"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -551,6 +557,7 @@ dependencies = [
  "libc",
  "log",
  "nix",
+ "rpc_blocking",
  "rpc_protocol",
  "rpcbind",
  "serde",
@@ -750,13 +757,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
-name = "rpc_protocol"
+name = "rpc_blocking"
 version = "0.1.0"
 dependencies = [
  "log",
  "nix",
+ "rpc_protocol",
+]
+
+[[package]]
+name = "rpc_protocol"
+version = "0.1.0"
+dependencies = [
+ "log",
  "xdr_codegen",
  "xdr_lib",
+]
+
+[[package]]
+name = "rpc_tokio"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "rpc_protocol",
+ "tokio",
 ]
 
 [[package]]
@@ -767,6 +791,7 @@ dependencies = [
  "env_logger",
  "log",
  "nix",
+ "rpc_blocking",
  "rpc_protocol",
  "xdr_codegen",
  "xdr_lib",
@@ -933,6 +958,28 @@ checksum = "be4d6b5f19ff7664e8c98d03e2139cb510db9b0a60b55f8e8709b689d939b6bc"
 dependencies = [
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "tokio"
+version = "1.54.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b52fd3255258d26fac7264ab5a76b53c13367136dc011d3d6ad4f8ed070396a3"
+dependencies = [
+ "bytes",
+ "pin-project-lite",
+ "tokio-macros",
+]
+
+[[package]]
+name = "tokio-macros"
+version = "2.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "78773a2a397f451582ce068015985c33193cf6dea8b74d2a639fe457b2f07b0e"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.3",
 ]
 
 [[package]]

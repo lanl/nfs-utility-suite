@@ -162,18 +162,20 @@ impl<T> RpcServer<T> {
 
         let mut buf = &buf[..amount as usize];
 
-        if buf.len() < 4 {
+        if buf.len() < RECORD_MARK_SIZE {
             // TODO: eventually, this should either try to recv more data, or just submit a
             // cancellation request and close the connection.
             todo!("Not enough bytes to read a record marker. Giving up.");
         }
 
-        let Ok(record_mark) = decode_record_mark(&buf[..4].try_into().unwrap()) else {
+        let record_mark = RecordMark::decode(&buf[..RECORD_MARK_SIZE].try_into().unwrap());
+        if !record_mark.last {
             // TODO: either handle this case, or submit a cancellation and close.
             todo!("Not handling message fragments. Giving up");
-        };
+        }
+        let record_mark = record_mark.len;
 
-        buf = &buf[4..]; // Advance buf past the record mark.
+        buf = &buf[RECORD_MARK_SIZE..]; // Advance buf past the record mark.
 
         if buf.len() < record_mark as usize {
             // TODO: need to read more data, unfortunately it will come back in anothe buffer, I assume
@@ -197,24 +199,24 @@ impl<T> RpcServer<T> {
             todo!("Handle this");
         };
 
-        let procedure_number = call.get_procedure();
+        let procedure_number = call.header.proc;
         if procedure_number == 0 {
             todo!("Implement null procedure");
         }
 
         if procedure_number as usize > map.procedures.len() - 1 {
-            debug!("CALL for unknown procedure {}", procedure_number);
+            debug!("CALL for unknown procedure {procedure_number}");
             todo!("handle this");
         }
 
         let Some(procedure) = map.procedures[procedure_number as usize] else {
-            debug!("CALL for unimplemented procedure {}", procedure_number);
+            debug!("CALL for unimplemented procedure {procedure_number}");
             todo!("handle this");
         };
 
         let res = procedure(&call, &mut self.user_state);
 
-        self.process_user_result(res, call.get_xid(), conn_fd);
+        self.process_user_result(res, call.xid, conn_fd);
     }
 
     fn process_user_result(&mut self, res: RingResult, xid: u32, conn_fd: i32) {

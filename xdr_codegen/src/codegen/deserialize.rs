@@ -216,7 +216,7 @@ impl ValidatedStruct {
         let code = off
             .deps
             .iter()
-            .map(|v| format!("{}_width", v))
+            .map(|v| format!("{v}_width"))
             .chain(
                 vec![format!("{}", off.known)]
                     .into_iter()

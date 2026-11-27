@@ -10,14 +10,15 @@ use std::{
 };
 
 use crate::{procedures::*, RpcbindServerAddress, *};
-use rpc_protocol::{client::do_rpc_call, *};
+use rpc_blocking::{client::do_rpc_call, Error};
+use rpc_protocol::*;
 
 /// Try to call the SET RPC for the RPCBIND server listening at `address`, to add `new_service` to
 /// its service list.
 pub fn set(
     new_service: rpcbind::RpcService,
     server_address: RpcbindServerAddress,
-) -> Result<bool, rpc_protocol::Error> {
+) -> Result<bool, rpc_blocking::Error> {
     debug!("performing RPCBIND Set call");
 
     match server_address {
@@ -35,17 +36,20 @@ pub fn set(
 pub fn set_using_stream<S: Read + Write>(
     new_service: rpcbind::RpcService,
     stream: &mut S,
-) -> Result<bool, rpc_protocol::Error> {
+) -> Result<bool, rpc_blocking::Error> {
     let arg = new_service.serialize_alloc();
 
     let res = do_rpc_call(
         stream,
-        RPCBPROG,
-        RPCBVERS::VERSION,
-        RPCBVERS::RPCBPROC_SET,
+        CallBody {
+            rpcvers: RPC_VERSION,
+            prog: RPCBPROG,
+            vers: RPCBVERS::VERSION,
+            proc: RPCBVERS::RPCBPROC_SET,
+            cred: OpaqueAuth::none(),
+            verf: OpaqueAuth::none(),
+        },
         arg.as_slice(),
-        OpaqueAuth::none(),
-        OpaqueAuth::none(),
     )?;
 
     match res.as_slice() {
@@ -57,17 +61,20 @@ pub fn set_using_stream<S: Read + Write>(
 pub fn getaddr_using_stream<S: Read + Write>(
     service: rpcbind::RpcService,
     stream: &mut S,
-) -> Result<std::ffi::OsString, rpc_protocol::Error> {
+) -> Result<std::ffi::OsString, rpc_blocking::Error> {
     let arg = service.serialize_alloc();
 
     let res = do_rpc_call(
         stream,
-        RPCBPROG,
-        RPCBVERS::VERSION,
-        RPCBVERS::RPCBPROC_GETADDR,
+        CallBody {
+            rpcvers: RPC_VERSION,
+            prog: RPCBPROG,
+            vers: RPCBVERS::VERSION,
+            proc: RPCBVERS::RPCBPROC_GETADDR,
+            cred: OpaqueAuth::none(),
+            verf: OpaqueAuth::none(),
+        },
         arg.as_slice(),
-        OpaqueAuth::none(),
-        OpaqueAuth::none(),
     )?;
 
     let Ok((addr, _)) = rpcbind::RpcbString::deserialize(res.as_slice()) else {

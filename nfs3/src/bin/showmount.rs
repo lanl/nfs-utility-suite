@@ -9,7 +9,8 @@ use std::{
 use clap::Parser;
 
 use nfs3::mount_proto::*;
-use rpc_protocol::{client::*, OpaqueAuth};
+use rpc_blocking::client::*;
+use rpc_protocol::{CallBody, OpaqueAuth, RPC_VERSION};
 use socket2::{Domain, Protocol, Socket, Type};
 
 #[derive(Parser)]
@@ -43,12 +44,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let res = do_rpc_call(
         &mut stream,
-        procedures::MOUNT_PROGRAM,
-        procedures::MOUNT_V3::VERSION,
-        procedures::MOUNT_V3::MOUNTPROC3_EXPORT,
+        CallBody {
+            rpcvers: RPC_VERSION,
+            prog: procedures::MOUNT_PROGRAM,
+            vers: procedures::MOUNT_V3::VERSION,
+            proc: procedures::MOUNT_V3::MOUNTPROC3_EXPORT,
+            cred: OpaqueAuth::none(),
+            verf: OpaqueAuth::none(),
+        },
         &[0u8; 0],
-        OpaqueAuth::none(),
-        OpaqueAuth::none(),
     )?;
 
     let (export_list, _) = Exports::deserialize(res.as_slice())?;
@@ -62,12 +66,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let res = do_rpc_call(
             &mut stream,
-            procedures::MOUNT_PROGRAM,
-            procedures::MOUNT_V3::VERSION,
-            procedures::MOUNT_V3::MOUNTPROC3_MNT,
+            CallBody {
+                rpcvers: RPC_VERSION,
+                prog: procedures::MOUNT_PROGRAM,
+                vers: procedures::MOUNT_V3::VERSION,
+                proc: procedures::MOUNT_V3::MOUNTPROC3_MNT,
+                cred: OpaqueAuth::none(),
+                verf: OpaqueAuth::none(),
+            },
             &mount_arg.serialize_alloc(),
-            OpaqueAuth::none(),
-            OpaqueAuth::none(),
         )?;
 
         let (mount_res, _) = MountResult::deserialize(res.as_slice())?;
@@ -80,7 +87,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("mount_failed: {mount_res:?}")
             }
         }
-        println!("mount_res: {:?}", mount_res);
+        println!("mount_res: {mount_res:?}");
     }
 
     Ok(())
